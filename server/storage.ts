@@ -81,7 +81,14 @@ export async function getLeaderboard(): Promise<
 
 // ─── Hex Cells ────────────────────────────────────────────────────────────────
 
+function todayPT(): string {
+  return new Date()
+    .toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
+    .split("T")[0];
+}
+
 export async function getAllHexes(): Promise<HexWithDetails[]> {
+  const today = todayPT();
   const cells = await db
     .select({
       h3Index: hexCells.h3Index,
@@ -95,10 +102,15 @@ export async function getAllHexes(): Promise<HexWithDetails[]> {
       oilWellCount: hexAmbient.oilWellCount,
       treeCount: hexAmbient.treeCount,
       baseYieldPerTick: hexAmbient.baseYieldPerTick,
+      citationToday: citationDaily.citationCount,
       ownerName: users.displayName,
     })
     .from(hexCells)
     .leftJoin(hexAmbient, eq(hexCells.h3Index, hexAmbient.h3Index))
+    .leftJoin(
+      citationDaily,
+      and(eq(hexCells.h3Index, citationDaily.h3Index), eq(citationDaily.date, today))
+    )
     .leftJoin(users, eq(hexCells.ownerId, users.id));
 
   return cells.map((c) => ({
@@ -110,6 +122,7 @@ export async function getAllHexes(): Promise<HexWithDetails[]> {
     degradation: c.degradation,
     neighborhood: c.neighborhood,
     lastTickYield: c.lastTickYield,
+    citationToday: c.citationToday ?? 0,
     ambient: c.oilWellCount !== null
       ? {
           h3Index: c.h3Index,

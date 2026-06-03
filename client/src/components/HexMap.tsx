@@ -5,6 +5,8 @@ import { Map as MapboxMap } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../lib/queryClient";
+import LayerControl from "./LayerControl";
+import { getLayer, metricColor, type LayerId } from "../lib/mapLayers";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || "";
 
@@ -41,6 +43,7 @@ export interface HexData {
   isExploited: boolean;
   degradation: number;
   lastTickYield: number;
+  citationToday?: number;
   ownerName?: string;
   ambient: {
     oilWellCount: number;
@@ -66,22 +69,14 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     staleTime: 30_000,
   });
 
-  const { data: hotspots = [] } = useQuery<{ h3Index: string; citationCount: number }[]>({
-    queryKey: ["/api/map/hotspots"],
-    queryFn: () => apiRequest("GET", "/api/map/hotspots"),
-    refetchInterval: 120_000,
-  });
+  const [layerId, setLayerId] = useState<LayerId>("ownership");
+  const layer = getLayer(layerId);
 
-  const hotspotMap = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const h of hotspots) m.set(h.h3Index, h.citationCount);
-    return m;
-  }, [hotspots]);
-
-  const maxCitations = useMemo(
-    () => Math.max(1, ...hotspots.map((h) => h.citationCount)),
-    [hotspots]
-  );
+  // Max value of the active metric, for normalizing the heat ramp.
+  const maxMetric = useMemo(() => {
+    if (!layer.metric) return 1;
+    return Math.max(1, ...hexes.map(layer.metric));
+  }, [hexes, layer]);
 
   const hexLayer = useMemo(
     () =>
@@ -101,36 +96,31 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
           return base + exploitBonus;
         },
         getFillColor: (d) => {
-          if (!d.ownerId) {
-            // Shade by citation heat
-            const heat = (hotspotMap.get(d.h3Index) ?? 0) / maxCitations;
-            const r = Math.floor(20 + heat * 60);
-            const g = Math.floor(10 + heat * 20);
-            const b = Math.floor(8 + heat * 10);
-            return [r, g, b, 120] as [number, number, number, number];
+          if (layerId === "ownership") {
+            if (!d.ownerId) return UNOWNED_COLOR;
+            if (d.pendingContest) return [200, 50, 30, 220] as [number, number, number, number];
+            const [r, g, b] = playerColor(d.ownerId);
+            const brightness = d.ownerId === viewerUserId ? 1.3 : 0.9;
+            const degradeFade = 1 - d.degradation * 0.005;
+            return [
+              Math.min(255, r * brightness * degradeFade),
+              Math.min(255, g * brightness * degradeFade),
+              Math.min(255, b * brightness * degradeFade),
+              210,
+            ] as [number, number, number, number];
           }
-
-          if (d.pendingContest) {
-            return [200, 50, 30, 220] as [number, number, number, number];
-          }
-
-          const [r, g, b] = playerColor(d.ownerId);
-          const brightness =
-            d.ownerId === viewerUserId
-              ? 1.3
-              : 0.9;
-          const degradeFade = 1 - d.degradation * 0.005;
-          return [
-            Math.min(255, r * brightness * degradeFade),
-            Math.min(255, g * brightness * degradeFade),
-            Math.min(255, b * brightness * degradeFade),
-            210,
-          ] as [number, number, number, number];
+          // Metric heat layer (parking, oil, ...)
+          return metricColor(layer.ramp!, layer.metric!(d), maxMetric);
         },
         getLineColor: (d) => {
-          if (d.h3Index === selectedHex?.h3Index) return [255, 220, 100, 255];
-          if (!d.ownerId) return [40, 30, 20, 60];
-          return [0, 0, 0, 80];
+          if (d.h3Index === selectedHex?.h3Index) return [255, 220, 100, 255] as [number, number, number, number];
+          // On metric layers, keep ownership legible via the border color.
+          if (layerId !== "ownership" && d.ownerId) {
+            const [r, g, b] = playerColor(d.ownerId);
+            return [r, g, b, 230] as [number, number, number, number];
+          }
+          if (!d.ownerId) return [40, 30, 20, 60] as [number, number, number, number];
+          return [0, 0, 0, 80] as [number, number, number, number];
         },
         lineWidthScale: 1,
         pickable: true,
@@ -140,12 +130,12 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
           onSelectHex(object === selectedHex ? null : object ?? null);
         },
         updateTriggers: {
-          getFillColor: [viewerUserId, hotspotMap, maxCitations, selectedHex],
-          getLineColor: [selectedHex],
+          getFillColor: [layerId, viewerUserId, maxMetric, selectedHex],
+          getLineColor: [layerId, selectedHex],
           getElevation: [hexes],
         },
       }),
-    [hexes, hotspotMap, maxCitations, viewerUserId, selectedHex, onSelectHex]
+    [hexes, layerId, layer, maxMetric, viewerUserId, selectedHex, onSelectHex]
   );
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
@@ -167,6 +157,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
           reuseMaps
         />
       </DeckGL>
+      <LayerControl active={layerId} onChange={setLayerId} />
     </div>
   );
 }
