@@ -8,7 +8,7 @@ import { latLngToCell } from "h3-js";
 import { db } from "./db";
 import { citationDaily, hexAmbient, hexCells } from "@shared/schema";
 import { upsertHexAmbient, upsertCitationDaily } from "./storage";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 
 const H3_RESOLUTION = 7;
 const SOCRATA_APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
@@ -202,6 +202,86 @@ export async function runOilWellsCensus(): Promise<{ indexed: number; errors: nu
   }
 
   return results;
+}
+
+// ─── Diagnostics ───────────────────────────────────────────────────────────────
+
+/**
+ * Pokes both source APIs and reports what they actually return, plus what's
+ * currently in the DB. Used to debug why the pipeline isn't populating data.
+ */
+export async function runDiagnostics(): Promise<Record<string, unknown>> {
+  const out: Record<string, any> = { db: {}, citations: {}, wells: {} };
+
+  // What did earlier runs actually store?
+  try {
+    const [amb] = await db.select({ c: sql<number>`count(*)::int` }).from(hexAmbient);
+    const [ambWells] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(hexAmbient)
+      .where(sql`oil_well_count > 0`);
+    const [cit] = await db.select({ c: sql<number>`count(*)::int` }).from(citationDaily);
+    out.db = {
+      hexAmbientRows: amb.c,
+      hexAmbientWithWells: ambWells.c,
+      citationDailyRows: cit.c,
+    };
+  } catch (e: any) {
+    out.db.error = e?.message ?? String(e);
+  }
+
+  // Citations: latest few rows reveal field names + coordinate format + recency.
+  try {
+    const resp = await axios.get<any[]>("https://data.lacity.org/resource/4f5p-udkv.json", {
+      params: { $limit: "3", $order: "issue_date DESC" },
+      timeout: 30000,
+    });
+    const rows = resp.data || [];
+    out.citations = {
+      rowsReturned: rows.length,
+      fields: rows[0] ? Object.keys(rows[0]) : [],
+      latestIssueDate: rows[0]?.issue_date,
+      sampleLatLng: rows
+        .slice(0, 3)
+        .map((r) => ({ latitude: r.latitude, longitude: r.longitude, location: r.location })),
+    };
+  } catch (e: any) {
+    out.citations.error = e?.response?.status
+      ? `HTTP ${e.response.status}`
+      : e?.message ?? String(e);
+  }
+
+  // Wells: field metadata + whether a basic query returns features.
+  try {
+    const resp = await axios.get<any>(
+      "https://gis.conservation.ca.gov/server/rest/services/WellSTAR/Wells/MapServer/0/query",
+      {
+        params: {
+          where: "1=1",
+          outFields: "*",
+          resultRecordCount: "2",
+          f: "json",
+          returnGeometry: "true",
+          outSR: "4326",
+        },
+        timeout: 20000,
+      }
+    );
+    out.wells = {
+      ok: !resp.data?.error,
+      apiError: resp.data?.error,
+      availableFields: (resp.data?.fields || []).map((f: any) => f.name),
+      featuresReturned: (resp.data?.features || []).length,
+      sampleFeature: (resp.data?.features || [])[0],
+    };
+  } catch (e: any) {
+    out.wells = {
+      ok: false,
+      error: e?.response?.status ? `HTTP ${e.response.status}` : e?.message ?? String(e),
+    };
+  }
+
+  return out;
 }
 
 // ─── Pipeline summary ─────────────────────────────────────────────────────────

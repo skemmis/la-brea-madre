@@ -22,7 +22,7 @@ import { users, hexCells, hexAmbient, contests, playerActions } from "@shared/sc
 import { eq, and, desc, sql } from "drizzle-orm";
 import { gridDisk } from "h3-js";
 import { runDailyTick } from "./backgroundJobs";
-import { runFullPipeline, runOilWellsCensus } from "./dataPipeline";
+import { runFullPipeline, runOilWellsCensus, runDiagnostics } from "./dataPipeline";
 
 // ─── Costs (crude) ────────────────────────────────────────────────────────────
 const COST_CLAIM = 10;
@@ -345,6 +345,15 @@ export function registerRoutes(app: Express) {
     try {
       const result = await runOilWellsCensus();
       res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Diagnostics: report what the source APIs return and what's in the DB.
+  app.get("/api/admin/diag", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      res.json(await runDiagnostics());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
