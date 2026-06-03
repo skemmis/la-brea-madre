@@ -15,8 +15,8 @@ await build({
   bundle: true,
   platform: "node",
   target: "node20",
-  format: "cjs",
-  outfile: "dist/index.cjs",
+  format: "esm",
+  outfile: "dist/index.js",
   external: [
     // Native modules
     "pg-native",
@@ -24,16 +24,12 @@ await build({
     // Heavy deps best loaded from node_modules
     "vite",
   ],
-  define: {
-    "import.meta.url": "require('url').pathToFileURL(__filename).href",
-  },
+  // ESM output keeps import.meta.url natively. The require shim lets any
+  // bundled CommonJS dependency that does a runtime require() still work.
   banner: {
-    js: `
-const require = (await import('module')).createRequire(import.meta.url);
-const __filename = (await import('url')).fileURLToPath(import.meta.url);
-const __dirname = (await import('path')).dirname(__filename);
-`.trim(),
+    js: `import { createRequire as __createRequire } from 'module';
+const require = __createRequire(import.meta.url);`,
   },
 });
 
-console.log("[build] Done. Output: dist/index.cjs + dist/public/");
+console.log("[build] Done. Output: dist/index.js + dist/public/");

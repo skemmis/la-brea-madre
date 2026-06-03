@@ -12,4 +12,4 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/package*.json ./
 RUN npm ci --omit=dev
 EXPOSE 5000
-CMD ["node", "dist/index.cjs"]
+CMD ["node", "dist/index.js"]
