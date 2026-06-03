@@ -10,6 +10,23 @@ execSync("npx vite build", { stdio: "inherit" });
 console.log("[build] Building backend...");
 mkdirSync("dist", { recursive: true });
 
+// Bundle only our own server source; leave every npm package and Node
+// builtin external, to be loaded from node_modules at runtime. Bundling
+// CommonJS/WASM deps (h3-js, node-cron, ...) into a single ESM file that
+// also uses top-level await makes Node reject it with
+// ERR_AMBIGUOUS_MODULE_SYNTAX, so we keep dependencies unbundled.
+const externalizePackages = {
+  name: "externalize-packages",
+  setup(b: import("esbuild").PluginBuild) {
+    // Matches bare specifiers (npm packages + node builtins), not "./" or "/".
+    b.onResolve({ filter: /^[^./]/ }, (args) => {
+      // Keep our path aliases bundled; everything else stays external.
+      if (args.path.startsWith("@shared") || args.path.startsWith("@/")) return;
+      return { path: args.path, external: true };
+    });
+  },
+};
+
 await build({
   entryPoints: ["server/index.ts"],
   bundle: true,
@@ -17,19 +34,7 @@ await build({
   target: "node20",
   format: "esm",
   outfile: "dist/index.js",
-  external: [
-    // Native modules
-    "pg-native",
-    "better-sqlite3",
-    // Heavy deps best loaded from node_modules
-    "vite",
-  ],
-  // ESM output keeps import.meta.url natively. The require shim lets any
-  // bundled CommonJS dependency that does a runtime require() still work.
-  banner: {
-    js: `import { createRequire as __createRequire } from 'module';
-const require = __createRequire(import.meta.url);`,
-  },
+  plugins: [externalizePackages],
 });
 
 console.log("[build] Done. Output: dist/index.js + dist/public/");

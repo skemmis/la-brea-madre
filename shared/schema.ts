@@ -27,11 +27,9 @@ export const users = pgTable("users", {
   lastActiveAt: timestamp("last_active_at").notNull().defaultNow(),
 });
 
-export const sessions = pgTable("sessions", {
-  sid: text("sid").primaryKey(),
-  sess: text("sess").notNull(),
-  expire: timestamp("expire").notNull(),
-});
+// NOTE: the "sessions" table is created and managed at runtime by
+// connect-pg-simple (see server/auth/auth.ts, createTableIfMissing: true),
+// so it is intentionally not defined here or in the migrations.
 
 // ─── Map / Territory ─────────────────────────────────────────────────────────
 

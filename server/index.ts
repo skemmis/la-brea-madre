@@ -4,6 +4,7 @@ import cors from "cors";
 import { setupSession, setupAuthRoutes } from "./auth/auth";
 import { registerRoutes } from "./routes";
 import { startBackgroundJobs } from "./backgroundJobs";
+import { runMigrations, seedHexes } from "./seed";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000", 10);
@@ -52,6 +53,11 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────────
+// Ensure the database schema exists and the hex grid is seeded before we
+// start serving, so a fresh deploy is ready without manual setup steps.
+await runMigrations();
+await seedHexes();
+
 app.listen(PORT, () => {
   console.log(`[server] La Brea Madre running on port ${PORT}`);
   startBackgroundJobs();
