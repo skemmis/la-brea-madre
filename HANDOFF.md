@@ -95,6 +95,6 @@ Build `§1` (this) until the core loop is proven fun. Then, roughly in order fro
 
 Keep the design doc's `§3` lore as **seepage, never exposition** — named, never explained.
 
-> ⚠️ The design doc (`la_brea_madre_design_doc.docx`) is the source of truth for tone and the
-> deferred roadmap. It is **not** in this repo. Re-upload it into the session if you want full
-> context on `§2`/`§3` before extending the game.
+> ⚠️ The design doc (`docs/design-doc.md`) is the source of truth for tone and the deferred
+> roadmap. Read it for full context on `§2`/`§3` before extending the game. Remember its
+> deployment rule: the `§3` lore is **seepage, never exposition** — never surface it in-game.
