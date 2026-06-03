@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  --color-tar: #0a0a0a;
+  --color-crude: #1a1209;
+  --color-amber: #d97706;
+  --color-bone: #e8dcc8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-tar);
+  color: var(--color-bone);
+  font-family: "Courier New", Courier, monospace;
+  overflow: hidden;
+}
+
+/* Mapbox attribution */
+.mapboxgl-ctrl-attrib {
+  font-size: 10px;
+  opacity: 0.5;
+}
