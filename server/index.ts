@@ -9,6 +9,13 @@ import { runMigrations, seedHexes } from "./seed";
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000", 10);
 
+// Behind Railway's HTTPS proxy: trust it so Express knows requests are secure
+// and will set the secure session cookie (otherwise the OIDC login flow loses
+// its session and fails with "missing_verifier").
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 // ─── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: false }));
