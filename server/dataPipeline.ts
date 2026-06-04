@@ -216,6 +216,13 @@ export async function runOilWellsCensus(): Promise<{
     results.errors++;
   }
 
+  // When the live census succeeded, it's authoritative: clear stale oil
+  // counts first so cells that no longer have active wells drop to zero.
+  // (Skip on fallback so we don't wipe real data on a transient API failure.)
+  if (results.errors === 0) {
+    await db.update(hexAmbient).set({ oilWellCount: 0, baseYieldPerTick: 1, updatedAt: new Date() });
+  }
+
   for (const [h3Index, wellCount] of cellWellCounts.entries()) {
     await upsertHexWells(h3Index, wellCount);
     results.indexed++;
