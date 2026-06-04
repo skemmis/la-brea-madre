@@ -51,7 +51,7 @@ function claimCost(config: GameConfig, ownedCount: number): number {
 export function newGame(config: GameConfig, seed: number): GameState {
   const players: GameState["players"] = {};
   for (const id of config.players) {
-    players[id] = { id, crude: config.startingCrude, relics: [], actionUsedTick: -1 };
+    players[id] = { id, crude: config.startingCrude, relics: [], cards: [], actionUsedTick: -1 };
   }
   return {
     seed,
@@ -73,6 +73,7 @@ export function addPlayer(state: GameState, config: GameConfig, playerId: Player
     id: playerId,
     crude: config.startingCrude,
     relics: [],
+    cards: [],
     actionUsedTick: -1,
   };
   return next;

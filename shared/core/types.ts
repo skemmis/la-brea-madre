@@ -37,6 +37,11 @@ export interface GameConfig {
     liquidity: number; // LMSR `b` — depth + bound on the maker's max loss
     payoutPerShare: number; // crude paid per winning share at resolution
   };
+  pack: {
+    cost: number; // crude to open a pack
+    size: number; // cards per pack
+    duplicateRefund: number; // crude back per duplicate drawn
+  };
 }
 
 /**
@@ -62,6 +67,7 @@ export interface PlayerState {
   id: PlayerId;
   crude: number;
   relics: string[];
+  cards: string[]; // owned deck-building cards (unique; passive effects)
   actionUsedTick: number; // tick index of last daily action (-1 = none)
 }
 

@@ -12,6 +12,7 @@
  * outstanding. The shell injects the question + base-rate odds (from history)
  * and, later, the resolving outcome (from the revealed real data).
  */
+import { cardEffects } from "./cards";
 import type {
   GameConfig,
   GameState,
@@ -164,8 +165,16 @@ export function resolveMarket(
 
   for (const [pid, held] of Object.entries(m.holdings)) {
     const shares = held[winningOutcome] ?? 0;
-    const payout = shares * payoutPerShare;
     const spent = m.spent[pid] ?? 0;
+
+    // Deck-building cards modify the payout: a multiplier on winnings, plus a
+    // refund on a net loss (the player's owned cards, applied passively).
+    const fx = cardEffects(next.players[pid]?.cards ?? []);
+    let payout = shares * payoutPerShare * fx.payoutMult;
+    if (payout < spent && fx.loserRefund > 0) {
+      payout += (spent - payout) * fx.loserRefund;
+    }
+
     if (next.players[pid]) next.players[pid].crude += payout;
     settlement.perPlayer[pid] = { shares, spent, payout, profit: payout - spent };
   }

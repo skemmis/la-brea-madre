@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { Droplets, TrendingUp, TrendingDown, Sparkles } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { usePlayer } from "../hooks/usePlayer";
+import { useCollection } from "../hooks/useDeck";
 import {
   useMarkets,
   usePositions,
@@ -20,6 +21,7 @@ const money = (n: number) => `$${n.toLocaleString()}`;
 export default function MarketPage() {
   const { user } = useAuth();
   const { data: player } = usePlayer(!!user);
+  const { data: deck } = useCollection(!!user);
   const { data: markets = [], isLoading } = useMarkets();
   const { data: positions = [] } = usePositions(!!user);
   const openRound = useOpenRound();
@@ -39,10 +41,17 @@ export default function MarketPage() {
         </div>
         <div className="flex items-center gap-4">
           {user && player ? (
-            <div className="flex items-center gap-1.5 text-sm">
-              <Droplets size={13} className="text-[#d97706]" />
-              <span className="text-[#d97706] tabular-nums">{player.crude.toLocaleString()}</span>
-              <span className="text-[#888] text-[10px]">CRUDE</span>
+            <div className="flex items-center gap-3 text-sm">
+              {deck && deck.effects.payoutMult > 1 && (
+                <span className="text-[10px] text-[#86d97a] border border-[#86d97a]/40 rounded-sm px-1.5 py-0.5">
+                  ×{deck.effects.payoutMult.toFixed(2)} PAYOUTS
+                </span>
+              )}
+              <div className="flex items-center gap-1.5">
+                <Droplets size={13} className="text-[#d97706]" />
+                <span className="text-[#d97706] tabular-nums">{player.crude.toLocaleString()}</span>
+                <span className="text-[#888] text-[10px]">CRUDE</span>
+              </div>
             </div>
           ) : (
             <a href="/api/login" className="text-xs text-[#d97706]/70 hover:text-[#d97706] tracking-widest">
@@ -50,6 +59,7 @@ export default function MarketPage() {
             </a>
           )}
           <nav className="flex gap-2 text-[10px] tracking-widest text-[#d97706]/40">
+            <Link href="/deck" className="hover:text-[#d97706]/80">DECK</Link>
             <Link href="/map" className="hover:text-[#d97706]/80">MAP</Link>
             {user && <Link href="/admin" className="hover:text-[#d97706]/80">ADMIN</Link>}
           </nav>
