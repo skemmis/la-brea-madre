@@ -1,0 +1,9 @@
+/**
+ * La Brea Madre game core — pure, headless, deterministic.
+ * The server/UI/DB shell imports from here; the core imports nothing of them.
+ */
+export * from "./types";
+export * from "./rng";
+export * from "./relics";
+export * from "./config";
+export * from "./game";
