@@ -5,6 +5,7 @@ import { setupSession, setupAuthRoutes } from "./auth/auth";
 import { registerRoutes } from "./routes";
 import { startBackgroundJobs } from "./backgroundJobs";
 import { runMigrations, seedHexes } from "./seed";
+import { ensureGameStateTable } from "./gameService";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000", 10);
@@ -64,6 +65,7 @@ if (process.env.NODE_ENV === "production") {
 // start serving, so a fresh deploy is ready without manual setup steps.
 await runMigrations();
 await seedHexes();
+await ensureGameStateTable();
 
 app.listen(PORT, () => {
   console.log(`[server] La Brea Madre running on port ${PORT}`);
