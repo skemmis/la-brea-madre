@@ -77,9 +77,15 @@ export default function AdminPage() {
           />
           <AdminButton
             label="CENSUS OIL WELLS"
-            description="Re-run CalGEM ambient census"
+            description="Re-run CalGEM active-well census"
             loading={running === "wells"}
             onClick={() => runAction("wells", () => apiRequest("POST", "/api/admin/pipeline/wells"))}
+          />
+          <AdminButton
+            label="CENSUS DEAD ANIMALS"
+            description="Re-run MyLA311 dead-animal reports"
+            loading={running === "deadanimals"}
+            onClick={() => runAction("deadanimals", () => apiRequest("POST", "/api/admin/pipeline/deadanimals"))}
           />
         </div>
 

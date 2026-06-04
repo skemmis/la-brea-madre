@@ -8,7 +8,7 @@ import proj4 from "proj4";
 import { latLngToCell } from "h3-js";
 import { db } from "./db";
 import { citationDaily, hexAmbient, hexCells } from "@shared/schema";
-import { upsertHexAmbient, upsertCitationDaily } from "./storage";
+import { upsertHexWells, upsertHexDeadAnimals, upsertCitationDaily } from "./storage";
 import { eq, sql } from "drizzle-orm";
 
 const H3_RESOLUTION = 7;
@@ -167,7 +167,7 @@ export async function runOilWellsCensus(): Promise<{
 
     while (hasMore) {
       const params = {
-        where: "CountyName = 'Los Angeles'",
+        where: "CountyName = 'Los Angeles' AND WellStatus = 'Active'",
         outFields: "Latitude,Longitude,WellStatus",
         f: "json",
         returnGeometry: "true",
@@ -217,7 +217,57 @@ export async function runOilWellsCensus(): Promise<{
   }
 
   for (const [h3Index, wellCount] of cellWellCounts.entries()) {
-    await upsertHexAmbient(h3Index, wellCount, 0);
+    await upsertHexWells(h3Index, wellCount);
+    results.indexed++;
+  }
+
+  return results;
+}
+
+// ─── Dead Animal Reports (MyLA311 Cases 2026) ──────────────────────────────────
+
+export async function runDeadAnimalCensus(): Promise<{
+  fetched: number;
+  indexed: number;
+  errors: number;
+}> {
+  const results = { fetched: 0, indexed: 0, errors: 0 };
+
+  const knownHexRows = await db.select({ h3Index: hexCells.h3Index }).from(hexCells);
+  const knownHexSet = new Set(knownHexRows.map((r) => r.h3Index));
+
+  const cellCounts = new Map<string, number>();
+
+  try {
+    const url = "https://data.lacity.org/resource/2cy6-i7zn.json";
+    const params: Record<string, string> = {
+      // The request-type field is `type`; dead-animal pickups contain "animal".
+      $where: "lower(type) like '%animal%'",
+      $select: "geolocation__latitude__s,geolocation__longitude__s",
+      $order: "createddate DESC",
+      $limit: "50000",
+    };
+    if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
+
+    const response = await axios.get<any[]>(url, { params, timeout: 60000 });
+    results.fetched = response.data?.length ?? 0;
+
+    for (const row of response.data) {
+      const coord = parseCoord(row.geolocation__latitude__s, row.geolocation__longitude__s);
+      if (!coord) continue;
+      const [lat, lng] = coord;
+      if (!inLA(lat, lng)) continue;
+      const h3 = latLngToCell(lat, lng, H3_RESOLUTION);
+      if (!knownHexSet.has(h3)) continue;
+      cellCounts.set(h3, (cellCounts.get(h3) ?? 0) + 1);
+    }
+  } catch (err) {
+    console.error("Dead animal census error:", err);
+    results.errors++;
+  }
+
+  for (const [h3Index, count] of cellCounts.entries()) {
+    await upsertHexDeadAnimals(h3Index, count);
     results.indexed++;
   }
 
@@ -346,15 +396,18 @@ export async function runFullPipeline(): Promise<void> {
   console.log("[pipeline] Starting full pipeline run...");
   const t = Date.now();
 
-  const [citations, wells] = await Promise.allSettled([
+  const [citations, wells, deadAnimals] = await Promise.allSettled([
     runCitationPipeline(2),
     runOilWellsCensus(),
+    runDeadAnimalCensus(),
   ]);
 
   console.log(
     `[pipeline] Done in ${Date.now() - t}ms — citations:`,
     citations.status === "fulfilled" ? citations.value : citations.reason,
     "| wells:",
-    wells.status === "fulfilled" ? wells.value : wells.reason
+    wells.status === "fulfilled" ? wells.value : wells.reason,
+    "| deadAnimals:",
+    deadAnimals.status === "fulfilled" ? deadAnimals.value : deadAnimals.reason
   );
 }

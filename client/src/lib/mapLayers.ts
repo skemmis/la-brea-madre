@@ -1,6 +1,6 @@
 import type { HexData } from "../components/HexMap";
 
-export type LayerId = "ownership" | "parking" | "oil";
+export type LayerId = "ownership" | "parking" | "oil" | "deadanimals";
 
 export interface MapLayer {
   id: LayerId;
@@ -26,9 +26,16 @@ export const LAYERS: MapLayer[] = [
   {
     id: "oil",
     label: "Oil",
-    legend: "Wells per cell",
+    legend: "Active wells per cell",
     ramp: [235, 170, 50],
     metric: (d) => d.ambient?.oilWellCount ?? 0,
+  },
+  {
+    id: "deadanimals",
+    label: "Carrion",
+    legend: "Dead-animal reports",
+    ramp: [120, 200, 120],
+    metric: (d) => d.ambient?.deadAnimalCount ?? 0,
   },
 ];
 

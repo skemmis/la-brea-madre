@@ -77,8 +77,8 @@ export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrud
             <div className="text-[#d97706]">{hex.citationToday ?? 0}</div>
           </div>
           <div>
-            <div className="text-[#888] mb-0.5">JACARANDAS</div>
-            <div className="text-[#d97706]">{hex.ambient?.treeCount ?? 0}</div>
+            <div className="text-[#888] mb-0.5">DEAD ANIMALS</div>
+            <div className="text-[#d97706]">{hex.ambient?.deadAnimalCount ?? 0}</div>
           </div>
           <div>
             <div className="text-[#888] mb-0.5">UPGRADE LVL</div>

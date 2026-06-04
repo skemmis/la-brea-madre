@@ -101,6 +101,7 @@ export async function getAllHexes(): Promise<HexWithDetails[]> {
       lastTickYield: hexCells.lastTickYield,
       oilWellCount: hexAmbient.oilWellCount,
       treeCount: hexAmbient.treeCount,
+      deadAnimalCount: hexAmbient.deadAnimalCount,
       baseYieldPerTick: hexAmbient.baseYieldPerTick,
       citationToday: citationDaily.citationCount,
       ownerName: users.displayName,
@@ -128,6 +129,7 @@ export async function getAllHexes(): Promise<HexWithDetails[]> {
           h3Index: c.h3Index,
           oilWellCount: c.oilWellCount ?? 0,
           treeCount: c.treeCount ?? 0,
+          deadAnimalCount: c.deadAnimalCount ?? 0,
           baseYieldPerTick: c.baseYieldPerTick ?? 1,
           updatedAt: new Date(),
         }
@@ -405,23 +407,27 @@ export async function recordTick(
 
 // ─── Hex Ambient ──────────────────────────────────────────────────────────────
 
-export async function upsertHexAmbient(
-  h3Index: string,
-  oilWellCount: number,
-  treeCount: number
-): Promise<void> {
-  const baseYield = Math.max(1, oilWellCount * 3 + Math.floor(treeCount * 0.5));
+// Each metric upserts only its own column(s) so re-running one census never
+// clobbers another's data (e.g. a dead-animal run won't zero out oil wells).
+
+export async function upsertHexWells(h3Index: string, oilWellCount: number): Promise<void> {
+  const baseYield = Math.max(1, oilWellCount * 3);
   await db
     .insert(hexAmbient)
-    .values({ h3Index, oilWellCount, treeCount, baseYieldPerTick: baseYield })
+    .values({ h3Index, oilWellCount, baseYieldPerTick: baseYield })
     .onConflictDoUpdate({
       target: hexAmbient.h3Index,
-      set: {
-        oilWellCount,
-        treeCount,
-        baseYieldPerTick: baseYield,
-        updatedAt: new Date(),
-      },
+      set: { oilWellCount, baseYieldPerTick: baseYield, updatedAt: new Date() },
+    });
+}
+
+export async function upsertHexDeadAnimals(h3Index: string, deadAnimalCount: number): Promise<void> {
+  await db
+    .insert(hexAmbient)
+    .values({ h3Index, deadAnimalCount })
+    .onConflictDoUpdate({
+      target: hexAmbient.h3Index,
+      set: { deadAnimalCount, updatedAt: new Date() },
     });
 }
 

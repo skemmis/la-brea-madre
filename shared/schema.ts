@@ -56,6 +56,7 @@ export const hexAmbient = pgTable("hex_ambient", {
   h3Index: text("h3_index").primaryKey(),
   oilWellCount: integer("oil_well_count").notNull().default(0),
   treeCount: integer("tree_count").notNull().default(0),
+  deadAnimalCount: integer("dead_animal_count").notNull().default(0),
   // Derived base yield: (wells * 3) + (trees * 0.5), floored to int
   baseYieldPerTick: integer("base_yield_per_tick").notNull().default(1),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

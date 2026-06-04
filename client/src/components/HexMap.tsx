@@ -48,6 +48,7 @@ export interface HexData {
   ambient: {
     oilWellCount: number;
     treeCount: number;
+    deadAnimalCount: number;
     baseYieldPerTick: number;
   } | null;
   pendingContest?: boolean;

@@ -1,0 +1,1 @@
+ALTER TABLE "hex_ambient" ADD COLUMN "dead_animal_count" integer DEFAULT 0 NOT NULL;
