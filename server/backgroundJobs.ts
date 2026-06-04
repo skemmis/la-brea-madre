@@ -9,7 +9,7 @@
 import cron from "node-cron";
 import { recordTick, getLastTick } from "./storage";
 import { runTick } from "./gameService";
-import { runCitationPipeline } from "./dataPipeline";
+import { runCitationPipeline, runCitationHistory } from "./dataPipeline";
 
 function ptMidnightCron() {
   // "0 59 23 * * *" in America/Los_Angeles via TZ env
@@ -58,13 +58,23 @@ export function startBackgroundJobs() {
     }
   });
 
-  // Citation pipeline every 6 hours
+  // Citation pipeline every 6 hours (live map snapshot)
   cron.schedule("0 */6 * * *", async () => {
     try {
-      console.log("[pipeline] Hourly citation pull...");
+      console.log("[pipeline] Citation pull...");
       await runCitationPipeline(1);
     } catch (err) {
       console.error("[pipeline] Error:", err);
+    }
+  });
+
+  // Historical daily series for the prediction markets — refresh once a day.
+  cron.schedule("30 2 * * *", async () => {
+    try {
+      console.log("[pipeline] Citation history refresh...");
+      await runCitationHistory();
+    } catch (err) {
+      console.error("[pipeline] History error:", err);
     }
   });
 

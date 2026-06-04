@@ -7,6 +7,7 @@ import {
   hexCells,
   hexAmbient,
   citationDaily,
+  citationMarketDaily,
   playerActions,
   contests,
   dailyTicks,
@@ -15,6 +16,7 @@ import {
   type HexCell,
   type HexAmbient,
   type HexWithDetails,
+  type CitationMarketDaily,
   type Contest,
 } from "@shared/schema";
 import {
@@ -466,6 +468,30 @@ export async function upsertCitationDaily(
     .insert(citationDaily)
     .values({ h3Index, date, citationCount, totalFine, uniqueMakes })
     .onConflictDoNothing();
+}
+
+// ─── Citation market daily (historical series for prediction markets) ──────────
+
+export async function upsertCitationMarketDay(
+  date: string,
+  citationCount: number,
+  totalFine: number
+): Promise<void> {
+  await db
+    .insert(citationMarketDaily)
+    .values({ date, citationCount, totalFine })
+    .onConflictDoUpdate({
+      target: citationMarketDaily.date,
+      set: { citationCount, totalFine, updatedAt: new Date() },
+    });
+}
+
+/** The full daily series, oldest first. */
+export async function getCitationMarketDays(): Promise<CitationMarketDaily[]> {
+  return await db
+    .select()
+    .from(citationMarketDaily)
+    .orderBy(asc(citationMarketDaily.date));
 }
 
 // ─── Hex cell bulk insert (init script) ──────────────────────────────────────

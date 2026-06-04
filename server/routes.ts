@@ -15,7 +15,13 @@ import { db } from "./db";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { runDailyTick } from "./backgroundJobs";
-import { runFullPipeline, runOilWellsCensus, runDeadAnimalCensus, runDiagnostics } from "./dataPipeline";
+import {
+  runFullPipeline,
+  runOilWellsCensus,
+  runDeadAnimalCensus,
+  runCitationHistory,
+  runDiagnostics,
+} from "./dataPipeline";
 import type { Action } from "@shared/core";
 
 function todayPT(): string {
@@ -181,6 +187,15 @@ export function registerRoutes(app: Express) {
   app.post("/api/admin/pipeline/deadanimals", requireAdmin, async (_req: Request, res: Response) => {
     try {
       res.json(await runDeadAnimalCensus());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Pull the citywide daily citation history that prices/resolves markets.
+  app.post("/api/admin/pipeline/history", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      res.json(await runCitationHistory());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
