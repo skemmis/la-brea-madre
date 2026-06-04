@@ -21,6 +21,12 @@ import {
   reveal as revealMarket,
   getPositions,
 } from "./marketService";
+import {
+  getBoard,
+  getPositions as getExchangePositions,
+  buy as buyExchange,
+  endDay,
+} from "./exchangeService";
 import { openPackFor, getCollection } from "./deckService";
 import { runDailyTick } from "./backgroundJobs";
 import {
@@ -205,6 +211,46 @@ export function registerRoutes(app: Express) {
   app.get("/api/markets/positions", requireAuth, async (req: Request, res: Response) => {
     const user = req.user as any;
     res.json(await getPositions(user.id));
+  });
+
+  // ── Prediction Exchange (standing YES/NO board on a hidden clock) ────────────────
+
+  // Today's board of open markets.
+  app.get("/api/exchange/board", async (_req: Request, res: Response) => {
+    try {
+      res.json(await getBoard());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // The player's open positions.
+  app.get("/api/exchange/positions", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    res.json(await getExchangePositions(user.id));
+  });
+
+  // Buy YES (0) or NO (1) on a market with crude.
+  app.post("/api/exchange/buy", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    const { marketId, outcome, budget } = req.body;
+    if (typeof marketId !== "string" || typeof outcome !== "number" || typeof budget !== "number") {
+      return res.status(400).json({ error: "marketId (string), outcome (number), budget (number) required" });
+    }
+    try {
+      res.json(await buyExchange(user.id, marketId, outcome, budget));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Settle today's markets and advance the clock.
+  app.post("/api/exchange/end-day", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      res.json(await endDay());
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // ── Deck / Packs ────────────────────────────────────────────────────────────────
