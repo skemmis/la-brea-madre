@@ -27,6 +27,7 @@ import {
   runOilWellsCensus,
   runDeadAnimalCensus,
   runCitationHistory,
+  runMakeHistory,
   runDiagnostics,
 } from "./dataPipeline";
 import type { Action } from "@shared/core";
@@ -261,6 +262,15 @@ export function registerRoutes(app: Express) {
   app.post("/api/admin/pipeline/history", requireAdmin, async (_req: Request, res: Response) => {
     try {
       res.json(await runCitationHistory());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Pull per-day Toyota/Honda ticket counts for the face-off market.
+  app.post("/api/admin/pipeline/makes", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      res.json(await runMakeHistory());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

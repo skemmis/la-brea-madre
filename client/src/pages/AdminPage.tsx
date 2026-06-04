@@ -87,6 +87,18 @@ export default function AdminPage() {
             loading={running === "deadanimals"}
             onClick={() => runAction("deadanimals", () => apiRequest("POST", "/api/admin/pipeline/deadanimals"))}
           />
+          <AdminButton
+            label="MARKET HISTORY"
+            description="Daily fines + citations series for the exchange"
+            loading={running === "history"}
+            onClick={() => runAction("history", () => apiRequest("POST", "/api/admin/pipeline/history"))}
+          />
+          <AdminButton
+            label="CAR MAKES"
+            description="Toyota vs Honda daily ticket counts"
+            loading={running === "makes"}
+            onClick={() => runAction("makes", () => apiRequest("POST", "/api/admin/pipeline/makes"))}
+          />
         </div>
 
         <div className="text-[9px] text-[#555] tracking-wider pt-4 border-t border-[#d97706]/10">

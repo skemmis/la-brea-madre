@@ -43,3 +43,42 @@ export function cleanDailyAggregates(
 
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
+
+export interface DailyCount {
+  date: string; // YYYY-MM-DD
+  value: number;
+}
+
+/**
+ * Generic single-count version of {@link cleanDailyAggregates} for any
+ * day-grouped count series (dead-animal reports, tickets for one car make…).
+ * Same trust rules: drop future-dated garbage, the still-trickling-in recent
+ * `lagDays`, absurdly old rows, and non-positive counts. Expects rows shaped
+ * like `{ day, n }` (override the count field with `valueKey`). De-duplicated,
+ * oldest → newest.
+ */
+export function cleanDailyCounts(
+  rows: Array<Record<string, unknown>>,
+  opts: { today: string; valueKey?: string; lagDays?: number; minDate?: string }
+): DailyCount[] {
+  const valueKey = opts.valueKey ?? "n";
+  const lagDays = opts.lagDays ?? 14;
+  const minDate = opts.minDate ?? "2016-01-01";
+  const cutoff = new Date(`${opts.today}T00:00:00Z`);
+  cutoff.setUTCDate(cutoff.getUTCDate() - lagDays);
+  const newestAllowed = cutoff.toISOString().slice(0, 10);
+
+  const byDate = new Map<string, DailyCount>();
+  for (const row of rows) {
+    const date = String(row.day ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (date < minDate || date > newestAllowed) continue;
+
+    const value = Math.round(parseFloat(String(row[valueKey] ?? "")) || 0);
+    if (value <= 0) continue;
+
+    byDate.set(date, { date, value });
+  }
+
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
