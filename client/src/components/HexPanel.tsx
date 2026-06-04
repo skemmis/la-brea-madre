@@ -1,6 +1,6 @@
-import { X, Zap, ArrowUp, Swords, Flame } from "lucide-react";
+import { X, Zap, ArrowUp, Flame } from "lucide-react";
 import type { HexData } from "./HexMap";
-import { useClaimHex, useUpgradeHex, useExploitHex, useRaidHex } from "../hooks/usePlayer";
+import { useClaimHex, useUpgradeHex, useExploitHex } from "../hooks/usePlayer";
 
 interface Props {
   hex: HexData;
@@ -12,13 +12,11 @@ interface Props {
 
 const UPGRADE_COST = [20, 40, 80];
 const CLAIM_COST = 10;
-const RAID_COST = 30;
 
 export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrude, onClose }: Props) {
   const claim = useClaimHex();
   const upgrade = useUpgradeHex();
   const exploit = useExploitHex();
-  const raid = useRaidHex();
 
   const isOwned = !!hex.ownerId;
   const isMine = hex.ownerId === viewerUserId;
@@ -158,16 +156,11 @@ export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrud
               </button>
             )}
 
-            {/* Raid */}
-            {isEnemy && canAct && !hex.pendingContest && (
-              <button
-                onClick={() => raid.mutate(hex.h3Index)}
-                disabled={raid.isPending || viewerCrude < RAID_COST}
-                className="w-full flex items-center gap-2 px-3 py-2 bg-[#e87070]/10 border border-[#e87070]/40 text-[#e87070] text-xs rounded-sm hover:bg-[#e87070]/20 disabled:opacity-40 transition-colors"
-              >
-                <Swords size={12} />
-                RAID — {RAID_COST} crude
-              </button>
+            {/* Raid / PvP is temporarily disabled while the core loop ships. */}
+            {isEnemy && (
+              <p className="text-[10px] text-[#888] tracking-wide">
+                Raids are temporarily disabled.
+              </p>
             )}
           </div>
         )}

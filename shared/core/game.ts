@@ -56,6 +56,19 @@ export function newGame(config: GameConfig, seed: number): GameState {
   return { seed, rng: makeRng(seed), tick: 0, players, hexes: {}, lastReport: null };
 }
 
+/** Add a player to an existing game (a mid-season join). No-op if present. */
+export function addPlayer(state: GameState, config: GameConfig, playerId: PlayerId): GameState {
+  if (state.players[playerId]) return state;
+  const next = clone(state);
+  next.players[playerId] = {
+    id: playerId,
+    crude: config.startingCrude,
+    relics: [],
+    actionUsedTick: -1,
+  };
+  return next;
+}
+
 // ─── Legal actions ────────────────────────────────────────────────────────────
 
 export function legalActions(state: GameState, config: GameConfig, playerId: PlayerId): Action[] {

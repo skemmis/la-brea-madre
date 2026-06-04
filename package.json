@@ -9,6 +9,7 @@
     "build": "tsx scripts/build.ts",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
+    "test": "node --import tsx --test \"shared/**/*.test.ts\" \"server/**/*.test.ts\"",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
