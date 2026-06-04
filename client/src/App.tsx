@@ -2,6 +2,7 @@ import { Switch, Route } from "wouter";
 import { Toaster } from "sonner";
 import { useAuth } from "./hooks/useAuth";
 import MapPage from "./pages/MapPage";
+import MarketPage from "./pages/MarketPage";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -23,7 +24,8 @@ export default function App() {
       <Switch>
         <Route path="/login" component={LoginPage} />
         <Route path="/admin" component={user ? AdminPage : LoginPage} />
-        <Route component={MapPage} />
+        <Route path="/map" component={MapPage} />
+        <Route component={MarketPage} />
       </Switch>
       <Toaster
         theme="dark"

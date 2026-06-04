@@ -6,12 +6,13 @@
 import axios from "axios";
 import proj4 from "proj4";
 import { latLngToCell } from "h3-js";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { citationDaily, hexAmbient, hexCells } from "@shared/schema";
 import {
   upsertHexWells,
   upsertHexDeadAnimals,
   upsertCitationDaily,
+  upsertCitationMarketDay,
   setPipelineMeta,
 } from "./storage";
 import { eq, sql } from "drizzle-orm";
@@ -167,6 +168,68 @@ export async function runCitationPipeline(_daysBack = 2): Promise<{
   }
 
   return results;
+}
+
+// ─── Citation history (daily series for prediction markets) ────────────────────
+
+export { cleanDailyAggregates, type DailyAggregate } from "./citationAggregate";
+import { cleanDailyAggregates } from "./citationAggregate";
+
+/**
+ * Pull citywide per-day citation totals (count + summed fines), grouped
+ * server-side by Socrata, and upsert the cleaned series. This is the
+ * historical record the markets are priced and resolved against.
+ */
+export async function runCitationHistory(days = 1200): Promise<{
+  fetched: number;
+  stored: number;
+  errors: number;
+}> {
+  const results = { fetched: 0, stored: 0, errors: 0 };
+  const today = todayPT();
+
+  // Exclude far-future garbage dates server-side too.
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const futureCutoff = `${tomorrow.toISOString().split("T")[0]}T00:00:00.000`;
+
+  try {
+    const url = "https://data.lacity.org/resource/4f5p-udkv.json";
+    const params: Record<string, string> = {
+      $select: "date_trunc_ymd(issue_date) AS day, sum(fine_amount) AS total_fine, count(1) AS n",
+      $where: `issue_date < '${futureCutoff}' AND issue_date > '2016-01-01T00:00:00.000' AND fine_amount IS NOT NULL`,
+      $group: "date_trunc_ymd(issue_date)",
+      $order: "day DESC",
+      $limit: String(days),
+    };
+    if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
+
+    const resp = await axios.get<any[]>(url, { params, timeout: 60000 });
+    results.fetched = resp.data?.length ?? 0;
+
+    const cleaned = cleanDailyAggregates(resp.data ?? [], { today });
+    for (const d of cleaned) {
+      await upsertCitationMarketDay(d.date, d.citationCount, d.totalFine);
+      results.stored++;
+    }
+  } catch (err) {
+    console.error("Citation history error:", err);
+    results.errors++;
+  }
+
+  return results;
+}
+
+/** Create the prediction-market data table if it doesn't exist yet. */
+export async function ensureMarketDataTable(): Promise<void> {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS citation_market_daily (
+       date date PRIMARY KEY,
+       citation_count integer NOT NULL DEFAULT 0,
+       total_fine integer NOT NULL DEFAULT 0,
+       updated_at timestamptz NOT NULL DEFAULT now()
+     )`
+  );
 }
 
 // ─── Oil Wells (CalGEM) ───────────────────────────────────────────────────────
@@ -435,8 +498,9 @@ export async function runFullPipeline(): Promise<void> {
   console.log("[pipeline] Starting full pipeline run...");
   const t = Date.now();
 
-  const [citations, wells, deadAnimals] = await Promise.allSettled([
+  const [citations, history, wells, deadAnimals] = await Promise.allSettled([
     runCitationPipeline(2),
+    runCitationHistory(),
     runOilWellsCensus(),
     runDeadAnimalCensus(),
   ]);
@@ -444,6 +508,8 @@ export async function runFullPipeline(): Promise<void> {
   console.log(
     `[pipeline] Done in ${Date.now() - t}ms — citations:`,
     citations.status === "fulfilled" ? citations.value : citations.reason,
+    "| history:",
+    history.status === "fulfilled" ? history.value : history.reason,
     "| wells:",
     wells.status === "fulfilled" ? wells.value : wells.reason,
     "| deadAnimals:",

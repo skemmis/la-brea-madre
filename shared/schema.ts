@@ -72,6 +72,15 @@ export const citationDaily = pgTable("citation_daily", {
   uniqueMakes: integer("unique_makes").notNull().default(0),
 });
 
+// Citywide daily citation aggregates — the historical series the prediction
+// markets are priced and resolved against (one row per real LA day).
+export const citationMarketDaily = pgTable("citation_market_daily", {
+  date: date("date").primaryKey(),
+  citationCount: integer("citation_count").notNull().default(0),
+  totalFine: integer("total_fine").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // ─── Player Actions ──────────────────────────────────────────────────────────
 
 export const actionTypeEnum = pgEnum("action_type", [
@@ -171,6 +180,7 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type HexCell = typeof hexCells.$inferSelect;
 export type HexAmbient = typeof hexAmbient.$inferSelect;
 export type CitationDaily = typeof citationDaily.$inferSelect;
+export type CitationMarketDaily = typeof citationMarketDaily.$inferSelect;
 export type PlayerAction = typeof playerActions.$inferSelect;
 export type Contest = typeof contests.$inferSelect;
 export type DailyTick = typeof dailyTicks.$inferSelect;

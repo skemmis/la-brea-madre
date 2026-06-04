@@ -7,3 +7,4 @@ export * from "./rng";
 export * from "./relics";
 export * from "./config";
 export * from "./game";
+export * from "./market";

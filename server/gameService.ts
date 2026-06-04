@@ -40,7 +40,7 @@ function todayPT(): string {
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // A DB user.id (number) maps to a core PlayerId (its string form).
-const pid = (userId: number): PlayerId => String(userId);
+export const pid = (userId: number): PlayerId => String(userId);
 
 // ─── Persistence (single jsonb document) ────────────────────────────────────────
 
@@ -62,7 +62,7 @@ async function loadRawState(): Promise<GameState | null> {
   return (rows[0]?.state as GameState) ?? null;
 }
 
-async function saveState(state: GameState): Promise<void> {
+export async function saveState(state: GameState): Promise<void> {
   await pool.query(
     `INSERT INTO game_state (id, state, updated_at)
        VALUES ($1, $2, now())
@@ -127,7 +127,7 @@ async function initStateFromDb(config: GameConfig): Promise<GameState> {
 }
 
 /** Load the canonical state, creating + importing it on first run. */
-async function getOrInitGame(): Promise<{ state: GameState; config: GameConfig }> {
+export async function getOrInitGame(): Promise<{ state: GameState; config: GameConfig }> {
   const board = await buildBoard();
   let state = await loadRawState();
   if (!state) {
@@ -140,7 +140,7 @@ async function getOrInitGame(): Promise<{ state: GameState; config: GameConfig }
 }
 
 /** Ensure a logged-in user exists as a core player; persist if newly added. */
-async function ensurePlayer(
+export async function ensurePlayer(
   state: GameState,
   config: GameConfig,
   userId: number
