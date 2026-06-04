@@ -53,7 +53,16 @@ export function newGame(config: GameConfig, seed: number): GameState {
   for (const id of config.players) {
     players[id] = { id, crude: config.startingCrude, relics: [], actionUsedTick: -1 };
   }
-  return { seed, rng: makeRng(seed), tick: 0, players, hexes: {}, lastReport: null };
+  return {
+    seed,
+    rng: makeRng(seed),
+    tick: 0,
+    players,
+    hexes: {},
+    lastReport: null,
+    markets: {},
+    lastSettlement: null,
+  };
 }
 
 /** Add a player to an existing game (a mid-season join). No-op if present. */

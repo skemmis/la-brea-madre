@@ -33,6 +33,10 @@ export interface GameConfig {
     citationInfluence: number; // extra upside per citation/day on a hex
     citationInfluenceCap: number;
   };
+  market: {
+    liquidity: number; // LMSR `b` — depth + bound on the maker's max loss
+    payoutPerShare: number; // crude paid per winning share at resolution
+  };
 }
 
 /**
@@ -73,6 +77,49 @@ export interface TickReport {
   perPlayer: Record<PlayerId, { gained: number; entries: DispatchEntry[] }>;
 }
 
+// ─── Prediction markets (the first surface) ────────────────────────────────────
+
+/**
+ * An LMSR (Logarithmic Market Scoring Rule) prediction market. The maker holds
+ * `q` outstanding shares per outcome; price is a deterministic function of `q`,
+ * so the whole thing is pure and replayable. Buying shifts `q` (and the price);
+ * at resolution, each share of the winning outcome pays `payoutPerShare`.
+ */
+export interface Market {
+  id: string;
+  question: string;
+  outcomes: string[];
+  b: number; // liquidity parameter (depth + bounds the maker's max loss)
+  q: number[]; // shares outstanding per outcome
+  status: "open" | "resolved";
+  resolvedOutcome: number | null;
+  holdings: Record<PlayerId, number[]>; // shares held per outcome, per player
+  spent: Record<PlayerId, number>; // crude cost basis per player
+}
+
+/** What a shell injects to open a market: the question + its base-rate odds. */
+export interface MarketSpec {
+  id: string;
+  question: string;
+  outcomes: string[];
+  baseRates: number[]; // opening probabilities (from historical data)
+}
+
+export interface SettlementEntry {
+  shares: number; // shares held of the winning outcome
+  spent: number; // total crude spent across all outcomes in this market
+  payout: number; // crude paid out
+  profit: number; // payout - spent
+}
+
+/** The "card flip": a resolved market's payouts — the prediction-game dispatch. */
+export interface Settlement {
+  marketId: string;
+  question: string;
+  outcome: string; // the winning outcome's label
+  perPlayer: Record<PlayerId, SettlementEntry>;
+}
+
 export interface GameState {
   seed: number;
   rng: RngState;
@@ -82,6 +129,10 @@ export interface GameState {
   hexes: Record<string, HexState>;
   /** The most recent tick's dispatch — the "what happened overnight" reveal. */
   lastReport: TickReport | null;
+  /** Open + resolved prediction markets, keyed by id. */
+  markets: Record<string, Market>;
+  /** The most recently resolved market — the prediction-game reveal. */
+  lastSettlement: Settlement | null;
 }
 
 // ─── Actions ───────────────────────────────────────────────────────────────────

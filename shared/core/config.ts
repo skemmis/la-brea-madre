@@ -31,6 +31,10 @@ export function defaultConfig(
       citationInfluence: 0.04,
       citationInfluenceCap: 0.25,
     },
+    market: {
+      liquidity: 100,
+      payoutPerShare: 1,
+    },
     ...overrides,
   };
 }
