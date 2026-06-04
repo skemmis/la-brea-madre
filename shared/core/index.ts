@@ -8,3 +8,5 @@ export * from "./relics";
 export * from "./config";
 export * from "./game";
 export * from "./market";
+export * from "./cards";
+export * from "./deck";

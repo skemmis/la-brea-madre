@@ -35,6 +35,11 @@ export function defaultConfig(
       liquidity: 100,
       payoutPerShare: 1,
     },
+    pack: {
+      cost: 25,
+      size: 3,
+      duplicateRefund: 8,
+    },
     ...overrides,
   };
 }
