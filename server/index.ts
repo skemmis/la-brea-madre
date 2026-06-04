@@ -7,7 +7,6 @@ import { startBackgroundJobs } from "./backgroundJobs";
 import { runMigrations, seedHexes } from "./seed";
 import { ensureGameStateTable } from "./gameService";
 import { ensureMarketDataTable, ensureExchangeTables } from "./dataPipeline";
-import { ensureMarketRoundTable } from "./marketService";
 import { ensureExchangeRuntime } from "./exchangeService";
 
 const app = express();
@@ -71,7 +70,6 @@ await seedHexes();
 await ensureGameStateTable();
 await ensureMarketDataTable();
 await ensureExchangeTables();
-await ensureMarketRoundTable();
 await ensureExchangeRuntime();
 
 app.listen(PORT, () => {

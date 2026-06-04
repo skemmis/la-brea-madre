@@ -13,6 +13,7 @@ import {
   upsertHexDeadAnimals,
   upsertCitationDaily,
   upsertCitationMarketDay,
+  upsertMetricDays,
   setPipelineMeta,
 } from "./storage";
 import { eq, sql } from "drizzle-orm";
@@ -212,6 +213,9 @@ export async function runCitationHistory(days = 1200): Promise<{
       await upsertCitationMarketDay(d.date, d.citationCount, d.totalFine);
       results.stored++;
     }
+    // Feed the prediction exchange's generic metric series.
+    await upsertMetricDays("fines", cleaned.map((d) => ({ date: d.date, value: d.totalFine })));
+    await upsertMetricDays("citations", cleaned.map((d) => ({ date: d.date, value: d.citationCount })));
   } catch (err) {
     console.error("Citation history error:", err);
     results.errors++;
