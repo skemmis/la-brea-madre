@@ -21,6 +21,7 @@ import {
   reveal as revealMarket,
   getPositions,
 } from "./marketService";
+import { openPackFor, getCollection } from "./deckService";
 import { runDailyTick } from "./backgroundJobs";
 import {
   runFullPipeline,
@@ -204,6 +205,24 @@ export function registerRoutes(app: Express) {
   app.get("/api/markets/positions", requireAuth, async (req: Request, res: Response) => {
     const user = req.user as any;
     res.json(await getPositions(user.id));
+  });
+
+  // ── Deck / Packs ────────────────────────────────────────────────────────────────
+
+  // The player's collection, combined effects, and the full catalog.
+  app.get("/api/deck", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    res.json(await getCollection(user.id));
+  });
+
+  // Spend crude to open a pack.
+  app.post("/api/deck/open-pack", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    try {
+      res.json(await openPackFor(user.id));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // ── Leaderboard ───────────────────────────────────────────────────────────────

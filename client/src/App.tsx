@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { useAuth } from "./hooks/useAuth";
 import MapPage from "./pages/MapPage";
 import MarketPage from "./pages/MarketPage";
+import DeckPage from "./pages/DeckPage";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/login" component={LoginPage} />
         <Route path="/admin" component={user ? AdminPage : LoginPage} />
         <Route path="/map" component={MapPage} />
+        <Route path="/deck" component={DeckPage} />
         <Route component={MarketPage} />
       </Switch>
       <Toaster
