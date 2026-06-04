@@ -8,6 +8,7 @@ import {
   real,
   date,
   pgEnum,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -80,6 +81,20 @@ export const citationMarketDaily = pgTable("citation_market_daily", {
   totalFine: integer("total_fine").notNull().default(0),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Generic daily metric series for the prediction exchange. Each market type
+// reads one or two named metrics (e.g. "fines", "citations", "dead_animals",
+// "make:TOYT"). One row per (metric, day).
+export const dailyMetric = pgTable(
+  "daily_metric",
+  {
+    metric: text("metric").notNull(),
+    date: date("date").notNull(),
+    value: integer("value").notNull().default(0),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.metric, t.date] }) })
+);
 
 // ─── Player Actions ──────────────────────────────────────────────────────────
 
@@ -181,6 +196,7 @@ export type HexCell = typeof hexCells.$inferSelect;
 export type HexAmbient = typeof hexAmbient.$inferSelect;
 export type CitationDaily = typeof citationDaily.$inferSelect;
 export type CitationMarketDaily = typeof citationMarketDaily.$inferSelect;
+export type DailyMetric = typeof dailyMetric.$inferSelect;
 export type PlayerAction = typeof playerActions.$inferSelect;
 export type Contest = typeof contests.$inferSelect;
 export type DailyTick = typeof dailyTicks.$inferSelect;

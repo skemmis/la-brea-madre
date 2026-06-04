@@ -232,6 +232,19 @@ export async function ensureMarketDataTable(): Promise<void> {
   );
 }
 
+/** Create the generic daily-metric table for the prediction exchange. */
+export async function ensureExchangeTables(): Promise<void> {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS daily_metric (
+       metric text NOT NULL,
+       date date NOT NULL,
+       value integer NOT NULL DEFAULT 0,
+       updated_at timestamptz NOT NULL DEFAULT now(),
+       PRIMARY KEY (metric, date)
+     )`
+  );
+}
+
 // ─── Oil Wells (CalGEM) ───────────────────────────────────────────────────────
 
 export async function runOilWellsCensus(): Promise<{

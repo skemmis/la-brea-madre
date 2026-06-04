@@ -8,6 +8,7 @@ import {
   hexAmbient,
   citationDaily,
   citationMarketDaily,
+  dailyMetric,
   playerActions,
   contests,
   dailyTicks,
@@ -492,6 +493,49 @@ export async function getCitationMarketDays(): Promise<CitationMarketDaily[]> {
     .select()
     .from(citationMarketDaily)
     .orderBy(asc(citationMarketDaily.date));
+}
+
+// ─── Generic daily metric series (prediction exchange) ──────────────────────────
+
+export async function upsertMetricDay(
+  metric: string,
+  date: string,
+  value: number
+): Promise<void> {
+  await db
+    .insert(dailyMetric)
+    .values({ metric, date, value })
+    .onConflictDoUpdate({
+      target: [dailyMetric.metric, dailyMetric.date],
+      set: { value, updatedAt: new Date() },
+    });
+}
+
+export async function upsertMetricDays(
+  metric: string,
+  points: { date: string; value: number }[]
+): Promise<void> {
+  for (const p of points) await upsertMetricDay(metric, p.date, p.value);
+}
+
+/** One metric's series, oldest first. */
+export async function getMetricSeries(
+  metric: string
+): Promise<{ date: string; value: number }[]> {
+  const rows = await db
+    .select({ date: dailyMetric.date, value: dailyMetric.value })
+    .from(dailyMetric)
+    .where(eq(dailyMetric.metric, metric))
+    .orderBy(asc(dailyMetric.date));
+  return rows;
+}
+
+/** Distinct metric names currently stored (for diagnostics / discovery). */
+export async function getMetricNames(): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ metric: dailyMetric.metric })
+    .from(dailyMetric);
+  return rows.map((r) => r.metric);
 }
 
 // ─── Hex cell bulk insert (init script) ──────────────────────────────────────

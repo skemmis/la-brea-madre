@@ -6,7 +6,7 @@ import { registerRoutes } from "./routes";
 import { startBackgroundJobs } from "./backgroundJobs";
 import { runMigrations, seedHexes } from "./seed";
 import { ensureGameStateTable } from "./gameService";
-import { ensureMarketDataTable } from "./dataPipeline";
+import { ensureMarketDataTable, ensureExchangeTables } from "./dataPipeline";
 import { ensureMarketRoundTable } from "./marketService";
 
 const app = express();
@@ -69,6 +69,7 @@ await runMigrations();
 await seedHexes();
 await ensureGameStateTable();
 await ensureMarketDataTable();
+await ensureExchangeTables();
 await ensureMarketRoundTable();
 
 app.listen(PORT, () => {
