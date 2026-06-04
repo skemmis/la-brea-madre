@@ -56,7 +56,7 @@ export default function PlayerHUD() {
           href="/"
           className="text-[10px] text-[#d97706]/40 hover:text-[#d97706]/70 font-mono tracking-widest"
         >
-          MAP
+          MARKET
         </Link>
         {user && (
           <>
