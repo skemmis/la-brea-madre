@@ -287,6 +287,56 @@ export async function runDiagnostics(): Promise<Record<string, unknown>> {
     out.wells = { ok: false, error: e?.response?.status ? `HTTP ${e.response.status}` : e?.message ?? String(e) };
   }
 
+  // Distinct LA well statuses (to choose the active/producing filter).
+  try {
+    const resp = await axios.get<any>(
+      "https://gis.conservation.ca.gov/server/rest/services/WellSTAR/Wells/MapServer/0/query",
+      {
+        params: {
+          where: "CountyName = 'Los Angeles'",
+          outFields: "WellStatus",
+          returnDistinctValues: "true",
+          returnGeometry: "false",
+          f: "json",
+        },
+        timeout: 20000,
+      }
+    );
+    out.wellStatuses = (resp.data?.features || []).map((f: any) => f.attributes?.WellStatus);
+  } catch (e: any) {
+    out.wellStatuses = { error: e?.message ?? String(e) };
+  }
+
+  // Dead-animal requests (MyLA311 Cases 2026): confirm fields + exact type string.
+  try {
+    const base = "https://data.lacity.org/resource/2cy6-i7zn.json";
+    const sample = await axios.get<any[]>(base, { params: { $limit: "1" }, timeout: 30000 });
+    out.deadAnimals = {
+      fields: sample.data?.[0] ? Object.keys(sample.data[0]) : [],
+      sampleRow: sample.data?.[0],
+    };
+    try {
+      const grp = await axios.get<any[]>(base, {
+        params: {
+          $select: "requesttype, count(1) as n",
+          $where: "lower(requesttype) like '%animal%'",
+          $group: "requesttype",
+          $limit: "20",
+        },
+        timeout: 30000,
+      });
+      (out.deadAnimals as any).animalTypes = grp.data;
+    } catch (e2: any) {
+      (out.deadAnimals as any).animalTypesError = e2?.response?.status
+        ? `HTTP ${e2.response.status}`
+        : e2?.message ?? String(e2);
+    }
+  } catch (e: any) {
+    out.deadAnimals = {
+      error: e?.response?.status ? `HTTP ${e.response.status}` : e?.message ?? String(e),
+    };
+  }
+
   return out;
 }
 
