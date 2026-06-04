@@ -14,6 +14,13 @@ import {
 import { db } from "./db";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import {
+  openRound,
+  listMarkets,
+  buy as buyContractsService,
+  reveal as revealMarket,
+  getPositions,
+} from "./marketService";
 import { runDailyTick } from "./backgroundJobs";
 import {
   runFullPipeline,
@@ -149,6 +156,55 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/contests", requireAuth, (_req: Request, res: Response) => res.json([]));
   app.get("/api/contests/recent", (_req: Request, res: Response) => res.json([]));
+
+  // ── Prediction Markets ──────────────────────────────────────────────────────────
+
+  // Open markets, as players see them (no hidden answer).
+  app.get("/api/markets", async (_req: Request, res: Response) => {
+    try {
+      res.json(await listMarkets());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Deal a new round on a fresh hidden historical day.
+  app.post("/api/markets/open", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      res.json(await openRound());
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Spend crude on an outcome (price moves as you buy).
+  app.post("/api/markets/:id/buy", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    const { outcome, budget } = req.body;
+    if (typeof outcome !== "number" || typeof budget !== "number") {
+      return res.status(400).json({ error: "outcome (number) and budget (number) required" });
+    }
+    try {
+      res.json(await buyContractsService(user.id, req.params.id, outcome, budget));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Reveal the hidden day and settle the market.
+  app.post("/api/markets/:id/reveal", requireAuth, async (req: Request, res: Response) => {
+    try {
+      res.json(await revealMarket(req.params.id));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // The player's open positions.
+  app.get("/api/markets/positions", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    res.json(await getPositions(user.id));
+  });
 
   // ── Leaderboard ───────────────────────────────────────────────────────────────
 
