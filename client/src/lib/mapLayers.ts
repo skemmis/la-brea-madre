@@ -19,9 +19,9 @@ export const LAYERS: MapLayer[] = [
   {
     id: "parking",
     label: "Parking",
-    legend: "Citations today",
+    legend: "Citations / day",
     ramp: [230, 70, 40],
-    metric: (d) => d.citationToday ?? 0,
+    metric: (d) => d.citationPerDay ?? 0,
   },
   {
     id: "oil",
@@ -33,9 +33,9 @@ export const LAYERS: MapLayer[] = [
   {
     id: "deadanimals",
     label: "Carrion",
-    legend: "Dead-animal reports",
+    legend: "Dead animals / day",
     ramp: [120, 200, 120],
-    metric: (d) => d.ambient?.deadAnimalCount ?? 0,
+    metric: (d) => d.deadAnimalPerDay ?? 0,
   },
 ];
 

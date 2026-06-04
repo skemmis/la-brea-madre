@@ -10,6 +10,7 @@ import {
   playerActions,
   contests,
   dailyTicks,
+  pipelineMeta,
   type User,
   type HexCell,
   type HexAmbient,
@@ -87,8 +88,29 @@ function todayPT(): string {
     .split("T")[0];
 }
 
+// ─── Pipeline metadata (event-feed window lengths, etc.) ────────────────────────
+
+export async function setPipelineMeta(key: string, value: number): Promise<void> {
+  await db
+    .insert(pipelineMeta)
+    .values({ key, value })
+    .onConflictDoUpdate({ target: pipelineMeta.key, set: { value } });
+}
+
+export async function getPipelineMeta(): Promise<Record<string, number>> {
+  const rows = await db.select().from(pipelineMeta);
+  const m: Record<string, number> = {};
+  for (const r of rows) m[r.key] = r.value;
+  return m;
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
 export async function getAllHexes(): Promise<HexWithDetails[]> {
   const today = todayPT();
+  const meta = await getPipelineMeta();
+  const citWindow = Math.max(1, meta["citation_window_days"] ?? 1);
+  const daWindow = Math.max(1, meta["dead_animal_window_days"] ?? 1);
   const cells = await db
     .select({
       h3Index: hexCells.h3Index,
@@ -124,6 +146,8 @@ export async function getAllHexes(): Promise<HexWithDetails[]> {
     neighborhood: c.neighborhood,
     lastTickYield: c.lastTickYield,
     citationToday: c.citationToday ?? 0,
+    citationPerDay: round1((c.citationToday ?? 0) / citWindow),
+    deadAnimalPerDay: round1((c.deadAnimalCount ?? 0) / daWindow),
     ambient: c.oilWellCount !== null
       ? {
           h3Index: c.h3Index,

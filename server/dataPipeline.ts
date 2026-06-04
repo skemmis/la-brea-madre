@@ -8,7 +8,12 @@ import proj4 from "proj4";
 import { latLngToCell } from "h3-js";
 import { db } from "./db";
 import { citationDaily, hexAmbient, hexCells } from "@shared/schema";
-import { upsertHexWells, upsertHexDeadAnimals, upsertCitationDaily } from "./storage";
+import {
+  upsertHexWells,
+  upsertHexDeadAnimals,
+  upsertCitationDaily,
+  setPipelineMeta,
+} from "./storage";
 import { eq, sql } from "drizzle-orm";
 
 const H3_RESOLUTION = 7;
@@ -55,6 +60,13 @@ function todayPT(): string {
   return new Date()
     .toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" })
     .split("T")[0];
+}
+
+// Number of days spanned by a set of record timestamps (min 1), used to
+// turn raw counts into per-day averages.
+function spanDays(minT: number, maxT: number): number {
+  if (!isFinite(minT) || !isFinite(maxT) || maxT <= minT) return 1;
+  return Math.max(1, Math.round((maxT - minT) / 86_400_000));
 }
 
 // ─── Parking Citations ────────────────────────────────────────────────────────
@@ -113,6 +125,8 @@ export async function runCitationPipeline(_daysBack = 2): Promise<{
       string,
       { count: number; totalFine: number; makes: Set<string> }
     >();
+    let minT = Infinity;
+    let maxT = -Infinity;
 
     for (const row of response.data) {
       const coord = parseCoord(row.loc_lat, row.loc_long);
@@ -130,6 +144,12 @@ export async function runCitationPipeline(_daysBack = 2): Promise<{
       entry.count++;
       entry.totalFine += parseFloat(row.fine_amount || "0") || 0;
       entry.makes.add(normalizeMake(row.make || ""));
+
+      const t = Date.parse(row.issue_date || "");
+      if (!Number.isNaN(t)) {
+        if (t < minT) minT = t;
+        if (t > maxT) maxT = t;
+      }
     }
 
     // Replace today's snapshot (idempotent re-runs).
@@ -139,6 +159,8 @@ export async function runCitationPipeline(_daysBack = 2): Promise<{
       await upsertCitationDaily(h3Index, storeDate, data.count, data.totalFine, data.makes.size);
       results.processed++;
     }
+
+    await setPipelineMeta("citation_window_days", spanDays(minT, maxT));
   } catch (err) {
     console.error("Citation pipeline error:", err);
     results.errors++;
@@ -250,7 +272,7 @@ export async function runDeadAnimalCensus(): Promise<{
     const params: Record<string, string> = {
       // The request-type field is `type`; dead-animal pickups contain "animal".
       $where: "lower(type) like '%animal%'",
-      $select: "geolocation__latitude__s,geolocation__longitude__s",
+      $select: "geolocation__latitude__s,geolocation__longitude__s,createddate",
       $order: "createddate DESC",
       $limit: "50000",
     };
@@ -259,6 +281,8 @@ export async function runDeadAnimalCensus(): Promise<{
     const response = await axios.get<any[]>(url, { params, timeout: 60000 });
     results.fetched = response.data?.length ?? 0;
 
+    let minT = Infinity;
+    let maxT = -Infinity;
     for (const row of response.data) {
       const coord = parseCoord(row.geolocation__latitude__s, row.geolocation__longitude__s);
       if (!coord) continue;
@@ -267,7 +291,15 @@ export async function runDeadAnimalCensus(): Promise<{
       const h3 = latLngToCell(lat, lng, H3_RESOLUTION);
       if (!knownHexSet.has(h3)) continue;
       cellCounts.set(h3, (cellCounts.get(h3) ?? 0) + 1);
+
+      const t = Date.parse(row.createddate || "");
+      if (!Number.isNaN(t)) {
+        if (t < minT) minT = t;
+        if (t > maxT) maxT = t;
+      }
     }
+
+    await setPipelineMeta("dead_animal_window_days", spanDays(minT, maxT));
   } catch (err) {
     console.error("Dead animal census error:", err);
     results.errors++;

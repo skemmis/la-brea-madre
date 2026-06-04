@@ -44,6 +44,8 @@ export interface HexData {
   degradation: number;
   lastTickYield: number;
   citationToday?: number;
+  citationPerDay?: number;
+  deadAnimalPerDay?: number;
   ownerName?: string;
   ambient: {
     oilWellCount: number;

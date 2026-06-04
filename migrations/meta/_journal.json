@@ -15,6 +15,13 @@
       "when": 1780531726350,
       "tag": "0001_busy_sue_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780532714259,
+      "tag": "0002_fat_stephen_strange",
+      "breakpoints": true
     }
   ]
 }

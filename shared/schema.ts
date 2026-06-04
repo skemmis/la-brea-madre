@@ -137,6 +137,13 @@ export const dailyTicks = pgTable("daily_ticks", {
   pipelineRunAt: timestamp("pipeline_run_at"),
 });
 
+// Small key/value store for pipeline metadata, e.g. how many days each
+// event feed currently spans (used to normalize counts to per-day rates).
+export const pipelineMeta = pgTable("pipeline_meta", {
+  key: text("key").primaryKey(),
+  value: real("value").notNull().default(0),
+});
+
 // ─── Zod Schemas ─────────────────────────────────────────────────────────────
 
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -171,6 +178,8 @@ export type DailyTick = typeof dailyTicks.$inferSelect;
 export type HexWithDetails = HexCell & {
   ambient: HexAmbient | null;
   citationToday?: number;
+  citationPerDay?: number;
+  deadAnimalPerDay?: number;
   ownerName?: string;
   ownerColor?: string;
   pendingContest?: boolean;
