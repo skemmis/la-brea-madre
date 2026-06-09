@@ -1,35 +1,20 @@
 /**
  * Database bootstrap run at server startup (and reusable by scripts):
  *   1. runMigrations()  — applies the SQL migrations in ./migrations
- *   2. seedHexes()      — populates the H3 hex grid for LA if it's empty
+ *   2. seedHexes()      — populates the H3 hex grid if it's empty or stale
  *
- * This lets a fresh deploy (e.g. Railway) come up with a ready database
- * without anyone running manual db:push / pipeline:hexes commands.
+ * The grid is the City of Los Angeles proper (see server/cityBoundary.ts):
+ * every res-9 cell with its centroid in the city, plus boundary straddlers.
+ * If the stored grid was built at a different resolution, it's wiped and
+ * regridded automatically — along with the per-hex data keyed by the old
+ * cell ids — so a deploy that changes H3_RESOLUTION migrates itself.
  */
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { polygonToCells } from "h3-js";
+import { getResolution } from "h3-js";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
-import { hexCells } from "@shared/schema";
-
-const H3_RESOLUTION = 7;
-
-// Approximate LA County boundary polygon ([lng, lat] per GeoJSON convention).
-const LA_COUNTY_APPROX: [number, number][] = [
-  [-118.9448, 34.8233],
-  [-118.6500, 34.8233],
-  [-118.1500, 34.8000],
-  [-117.6462, 34.6500],
-  [-117.6462, 34.0300],
-  [-118.1200, 33.7033],
-  [-118.6000, 33.7033],
-  [-119.1200, 33.9000],
-  [-119.1200, 34.3000],
-  [-118.9448, 34.8233],
-];
-
-// H3 expects [lat, lng] pairs for the polygon.
-const H3_POLYGON: [number, number][] = LA_COUNTY_APPROX.map(([lng, lat]) => [lat, lng]);
+import { hexCells, hexAmbient, citationDaily } from "@shared/schema";
+import { cityCells, H3_RESOLUTION } from "./cityBoundary";
 
 export async function runMigrations(): Promise<void> {
   console.log("[migrate] Applying database migrations...");
@@ -38,22 +23,35 @@ export async function runMigrations(): Promise<void> {
 }
 
 /**
- * Insert the LA hex grid. Skips work if cells already exist (idempotent),
- * unless `force` is set.
+ * Insert the city hex grid. Skips work if a grid at the current resolution
+ * already exists (idempotent); a `force` or a resolution change regrids.
  */
 export async function seedHexes(force = false): Promise<number> {
-  if (!force) {
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(hexCells);
-    if (count > 0) {
-      console.log(`[seed] hex_cells already has ${count} cells, skipping.`);
+  const existing = await db
+    .select({ h3Index: hexCells.h3Index })
+    .from(hexCells)
+    .limit(1);
+
+  if (existing.length > 0) {
+    const stale = getResolution(existing[0].h3Index) !== H3_RESOLUTION;
+    if (!force && !stale) {
+      const [{ count }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(hexCells);
+      console.log(`[seed] hex_cells already has ${count} res-${H3_RESOLUTION} cells, skipping.`);
       return count;
     }
+    console.log(
+      `[seed] Regridding (${stale ? `stale resolution → ${H3_RESOLUTION}` : "forced"}): ` +
+        `clearing hex_cells + per-hex data...`
+    );
+    await db.delete(citationDaily);
+    await db.delete(hexAmbient);
+    await db.delete(hexCells);
   }
 
-  const cells = polygonToCells(H3_POLYGON, H3_RESOLUTION);
-  console.log(`[seed] Generating ${cells.length} H3 cells for LA County...`);
+  const cells = cityCells(H3_RESOLUTION);
+  console.log(`[seed] Generating ${cells.length} res-${H3_RESOLUTION} cells for the City of LA...`);
 
   const BATCH = 500;
   for (let i = 0; i < cells.length; i += BATCH) {

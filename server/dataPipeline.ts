@@ -17,8 +17,8 @@ import {
   setPipelineMeta,
 } from "./storage";
 import { eq, sql } from "drizzle-orm";
+import { pointInCity, H3_RESOLUTION } from "./cityBoundary";
 
-const H3_RESOLUTION = 7;
 const SOCRATA_APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
 
 // California State Plane Zone 5 (EPSG:2229, NAD83, US survey feet) — the
@@ -28,12 +28,9 @@ const STATE_PLANE_5 =
   "+lat_0=33.5 +lon_0=-118 +x_0=2000000.0001016 +y_0=500000.0001016001 " +
   "+datum=NAD83 +units=us-ft +no_defs";
 
-const LA_LAT = [33, 35] as const;
-const LA_LNG = [-119.5, -117] as const;
-
-function inLA(lat: number, lng: number): boolean {
-  return lat >= LA_LAT[0] && lat <= LA_LAT[1] && lng >= LA_LNG[0] && lng <= LA_LNG[1];
-}
+// Only events inside the City of LA proper count toward the game — even in
+// hexes that straddle the boundary, the out-of-city share is dropped here.
+const inLA = pointInCity;
 
 /**
  * Parse a coordinate pair that may be either WGS84 decimal degrees or
