@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import compression from "compression";
 import { setupSession, setupAuthRoutes } from "./auth/auth";
 import { registerRoutes } from "./routes";
 import { startBackgroundJobs } from "./backgroundJobs";
@@ -20,6 +21,9 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
+// gzip everything — notably the static base-map GeoJSON (la-streets is ~7.6 MB
+// raw but ~570 KB compressed) and the JS bundle.
+app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: false }));
 

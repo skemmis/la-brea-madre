@@ -105,6 +105,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
   const { data: land } = useGeo("socal-land");
   const { data: coastline } = useGeo("socal-coastline");
   const { data: rippleGeo } = useGeo("socal-ripples");
+  const { data: streets } = useGeo("la-streets");
   const { data: roads } = useGeo("la-roads");
   const { data: hoods } = useGeo("la-neighborhood-labels");
   const { data: cities } = useGeo("la-city-labels");
@@ -155,6 +156,26 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
       pickable: false,
     });
   }, [coastline]);
+
+  // The surface-street grid: fine ink, weighted by class. Lighter when zoomed
+  // out so the city doesn't smear into a solid block of blue.
+  const streetsLayer = useMemo(() => {
+    if (!streets) return null;
+    const far = viewState.zoom < 11;
+    return new GeoJsonLayer({
+      id: "streets",
+      data: streets,
+      stroked: true,
+      filled: false,
+      getLineColor: (f: any) =>
+        [...INK, [70, 95, 120, 150][f.properties?.t ?? 0]] as [number, number, number, number],
+      lineWidthUnits: "pixels",
+      getLineWidth: (f: any) => [0.4, 0.5, 0.7, 0.9][f.properties?.t ?? 0],
+      lineWidthMinPixels: far ? 0.3 : 0.4,
+      pickable: false,
+      updateTriggers: { getLineWidth: [], lineWidthMinPixels: [far] },
+    });
+  }, [streets, viewState.zoom < 11]);
 
   // Freeways: the heaviest linework on the sheet besides the city limit.
   const roadsLayer = useMemo(() => {
@@ -314,6 +335,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
           landLayer,
           rippleLayer,
           coastLayer,
+          streetsLayer,
           roadsLayer,
           hexLayer,
           boundaryLayer,
