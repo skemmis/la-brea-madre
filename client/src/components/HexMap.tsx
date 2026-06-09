@@ -7,7 +7,7 @@
 import { useMemo, useState, useCallback } from "react";
 import DeckGL from "@deck.gl/react";
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
-import { GeoJsonLayer } from "@deck.gl/layers";
+import { GeoJsonLayer, TextLayer } from "@deck.gl/layers";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../lib/queryClient";
 import LayerControl from "./LayerControl";
@@ -15,7 +15,22 @@ import { getLayer, metricColor, type LayerId } from "../lib/mapLayers";
 
 // ─── Blueprint palette ────────────────────────────────────────────────────────
 const PAPER = "#ece4d0";
+const OCEAN = "#dfdbc6"; // the same paper, a shade colder where the water is
 const INK: [number, number, number] = [42, 54, 106]; // Prussian blue
+const SERIF = "Georgia, 'Times New Roman', serif";
+
+// Letterspaced caps, like the old sheets: "BURBANK" → "B U R B A N K".
+const spaced = (s: string) => s.split("").join(" ");
+
+/** A static GeoJSON sheet layer from /public/geo — fetched once, cached forever. */
+function useGeo(name: string) {
+  return useQuery<any>({
+    queryKey: ["geo", name],
+    queryFn: () => fetch(`/geo/${name}.geojson`).then((r) => r.json()),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+}
 
 // Initial view: the city centroid (Census INTPT), flat like a print.
 const INITIAL_VIEW_STATE = {
@@ -85,16 +100,59 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     staleTime: 30_000,
   });
 
-  // The City of Los Angeles boundary — static, served from /public, fetched once.
-  const { data: boundary } = useQuery<any>({
-    queryKey: ["la-city-boundary"],
-    queryFn: () => fetch("/geo/la-city-boundary.geojson").then((r) => r.json()),
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
+  // The static sheet: land, coast, freeways, the boundary, and label points.
+  const { data: boundary } = useGeo("la-city-boundary");
+  const { data: land } = useGeo("socal-land");
+  const { data: coastline } = useGeo("socal-coastline");
+  const { data: roads } = useGeo("la-roads");
+  const { data: hoods } = useGeo("la-neighborhood-labels");
+  const { data: cities } = useGeo("la-city-labels");
 
   const [layerId, setLayerId] = useState<LayerId>("ownership");
   const layer = getLayer(layerId);
+
+  // Land is paper; whatever it doesn't cover is the (slightly colder) ocean.
+  // Unstroked — its edges are bbox clip cuts; the real coast ink is below.
+  const landLayer = useMemo(() => {
+    if (!land) return null;
+    return new GeoJsonLayer({
+      id: "land",
+      data: land,
+      stroked: false,
+      filled: true,
+      getFillColor: [236, 228, 208, 255],
+      pickable: false,
+    });
+  }, [land]);
+
+  const coastLayer = useMemo(() => {
+    if (!coastline) return null;
+    return new GeoJsonLayer({
+      id: "coastline",
+      data: coastline,
+      stroked: true,
+      filled: false,
+      getLineColor: [...INK, 130] as [number, number, number, number],
+      lineWidthUnits: "pixels",
+      getLineWidth: 1.2,
+      pickable: false,
+    });
+  }, [coastline]);
+
+  // Freeways: the heaviest linework on the sheet besides the city limit.
+  const roadsLayer = useMemo(() => {
+    if (!roads) return null;
+    return new GeoJsonLayer({
+      id: "roads",
+      data: roads,
+      stroked: true,
+      filled: false,
+      getLineColor: [...INK, 150] as [number, number, number, number],
+      lineWidthUnits: "pixels",
+      getLineWidth: (f: any) => (f.properties?.type === "Major Highway" ? 1.6 : 0.9),
+      pickable: false,
+    });
+  }, [roads]);
 
   // The city limit, inked above the grid.
   const boundaryLayer = useMemo(() => {
@@ -111,6 +169,61 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
       pickable: false,
     });
   }, [boundary]);
+
+  // Neighborhood names: the biggest districts always; the rest as you zoom in.
+  const hoodLabelLayer = useMemo(() => {
+    if (!hoods) return null;
+    const sorted = [...hoods.features].sort((a, b) => b.properties.area - a.properties.area);
+    const visible = viewState.zoom >= 10.5 ? sorted : sorted.slice(0, 45);
+    return new TextLayer({
+      id: "hood-labels",
+      data: visible,
+      getPosition: (f: any) => f.geometry.coordinates,
+      getText: (f: any) => f.properties.name,
+      getSize: (f: any) => (f.properties.area > 0.0006 ? 12 : 10),
+      getColor: [...INK, 175] as [number, number, number, number],
+      fontFamily: SERIF,
+      characterSet: "auto",
+      sizeUnits: "pixels",
+      pickable: false,
+    });
+  }, [hoods, viewState.zoom]);
+
+  // Neighboring towns, bold and letterspaced like the reference sheets.
+  const cityLabelLayer = useMemo(() => {
+    if (!cities) return null;
+    return new TextLayer({
+      id: "city-labels",
+      data: cities.features,
+      getPosition: (f: any) => f.geometry.coordinates,
+      getText: (f: any) => spaced(f.properties.name),
+      getSize: 13,
+      getColor: [...INK, 215] as [number, number, number, number],
+      fontFamily: SERIF,
+      fontWeight: "bold",
+      characterSet: "auto",
+      sizeUnits: "pixels",
+      pickable: false,
+    });
+  }, [cities]);
+
+  const oceanLabelLayer = useMemo(
+    () =>
+      new TextLayer({
+        id: "ocean-label",
+        data: [{ position: [-118.72, 33.82], text: spaced("PACIFIC  OCEAN") }],
+        getPosition: (d: any) => d.position,
+        getText: (d: any) => d.text,
+        getSize: 24,
+        getAngle: -38, // running with the shoreline of the bay
+        getColor: [...INK, 110] as [number, number, number, number],
+        fontFamily: SERIF,
+        characterSet: "auto",
+        sizeUnits: "pixels",
+        pickable: false,
+      }),
+    []
+  );
 
   // Max value of the active metric, for normalizing the heat ramp.
   const maxMetric = useMemo(() => {
@@ -169,16 +282,27 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
   );
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
-    setViewState(vs);
+    // Stay on the sheet: clamp zoom so the view never outruns the extracted
+    // base-map bbox or dives below useful detail.
+    setViewState({ ...vs, zoom: Math.min(14, Math.max(8.8, vs.zoom)) });
   }, []);
 
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative", background: PAPER }}>
+    <div style={{ width: "100%", height: "100%", position: "relative", background: OCEAN }}>
       <DeckGL
         viewState={viewState}
         onViewStateChange={onViewStateChange}
         controller={true}
-        layers={[hexLayer, boundaryLayer]}
+        layers={[
+          landLayer,
+          coastLayer,
+          roadsLayer,
+          hexLayer,
+          boundaryLayer,
+          hoodLabelLayer,
+          cityLabelLayer,
+          oceanLabelLayer,
+        ]}
         getCursor={({ isHovering }) => (isHovering ? "pointer" : "grab")}
       />
       {/* Paper finish: grain + vignette, multiplied over ink and all. */}
