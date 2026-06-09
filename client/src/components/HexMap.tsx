@@ -104,6 +104,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
   const { data: boundary } = useGeo("la-city-boundary");
   const { data: land } = useGeo("socal-land");
   const { data: coastline } = useGeo("socal-coastline");
+  const { data: rippleGeo } = useGeo("socal-ripples");
   const { data: roads } = useGeo("la-roads");
   const { data: hoods } = useGeo("la-neighborhood-labels");
   const { data: cities } = useGeo("la-city-labels");
@@ -124,6 +125,22 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
       pickable: false,
     });
   }, [land]);
+
+  // Engraved water lines: three echoes of the coast, fading seaward.
+  const rippleLayer = useMemo(() => {
+    if (!rippleGeo) return null;
+    return new GeoJsonLayer({
+      id: "shore-ripples",
+      data: rippleGeo,
+      stroked: true,
+      filled: false,
+      getLineColor: (f: any) =>
+        [...INK, [0, 52, 36, 22][f.properties?.k ?? 1]] as [number, number, number, number],
+      lineWidthUnits: "pixels",
+      getLineWidth: 0.6,
+      pickable: false,
+    });
+  }, [rippleGeo]);
 
   const coastLayer = useMemo(() => {
     if (!coastline) return null;
@@ -295,6 +312,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
         controller={true}
         layers={[
           landLayer,
+          rippleLayer,
           coastLayer,
           roadsLayer,
           hexLayer,
