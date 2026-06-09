@@ -13,6 +13,7 @@ interface Stats {
 
 export default function AdminPage() {
   const [running, setRunning] = useState<string | null>(null);
+  const [result, setResult] = useState<{ label: string; data: unknown } | null>(null);
 
   const { data: stats, refetch } = useQuery<Stats>({
     queryKey: ["/api/admin/stats"],
@@ -22,10 +23,12 @@ export default function AdminPage() {
   async function runAction(label: string, fn: () => Promise<unknown>) {
     setRunning(label);
     try {
-      await fn();
+      const data = await fn();
+      setResult({ label, data });
       toast.success(`${label} complete`);
       refetch();
     } catch (err: any) {
+      setResult({ label, data: { error: err.message } });
       toast.error(err.message);
     } finally {
       setRunning(null);
@@ -99,7 +102,25 @@ export default function AdminPage() {
             loading={running === "makes"}
             onClick={() => runAction("makes", () => apiRequest("POST", "/api/admin/pipeline/makes"))}
           />
+          <AdminButton
+            label="DIAGNOSTICS"
+            description="Probe source APIs + dataset field names"
+            loading={running === "diag"}
+            onClick={() => runAction("diag", () => apiRequest("GET", "/api/admin/diag"))}
+          />
         </div>
+
+        {/* Last run output — fetched/indexed/errors, or the diag dump */}
+        {result && (
+          <div className="border border-[#d97706]/20 rounded-sm">
+            <div className="text-[10px] text-[#888] tracking-widest px-3 py-1.5 border-b border-[#d97706]/10">
+              {result.label.toUpperCase()} RESULT
+            </div>
+            <pre className="text-[10px] text-[#d97706]/80 p-3 overflow-auto max-h-72 whitespace-pre-wrap">
+              {JSON.stringify(result.data, null, 2)}
+            </pre>
+          </div>
+        )}
 
         <div className="text-[9px] text-[#555] tracking-wider pt-4 border-t border-[#d97706]/10">
           ADMIN EMAILS: configured via ADMIN_EMAILS env var
