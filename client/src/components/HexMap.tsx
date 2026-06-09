@@ -88,6 +88,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
       id: "streets",
       type: "line",
       source: "streets",
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": INK_HEX,
         "line-width": [
@@ -108,6 +109,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
       id: "roads",
       type: "line",
       source: "roads",
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": INK_HEX,
         "line-width": ["match", ["get", "type"], "Major Highway", 1.6, 0.9] as any,
@@ -119,6 +121,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
       id: "city-boundary",
       type: "line",
       source: "boundary",
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: { "line-color": INK_HEX, "line-width": 2, "line-opacity": 0.92 },
     },
     // ── Typography ──────────────────────────────────────────────────────────

@@ -38,10 +38,12 @@ const STREETS =
 
 // Street classes worth printing, mapped to a render weight tier. Footways,
 // cycleways, steps, etc. are dropped — this is the drivable street grid.
+// Ramp `*_link` classes are dropped too: their motorways aren't on the sheet,
+// so they render as orphaned curls at interchanges.
 const STREET_TIERS: Record<string, number> = {
-  trunk: 3, primary: 3, primary_link: 3,
-  secondary: 2, secondary_link: 2,
-  tertiary: 1, tertiary_link: 1,
+  trunk: 3, primary: 3,
+  secondary: 2,
+  tertiary: 1,
   residential: 0, unclassified: 0, living_street: 0,
 };
 
@@ -244,32 +246,104 @@ async function roads(): Promise<void> {
  */
 async function streets(): Promise<void> {
   const geo = await fetchJson(STREETS);
-  const features: any[] = [];
+  // The source maps one feature per block face; collect the clipped runs
+  // grouped by (tier, name) so they can be chained back into whole streets.
+  const groups = new Map<string, Pt[][]>();
   for (const f of geo.features) {
     const tier = STREET_TIERS[f.properties?.fclass];
     if (tier === undefined) continue;
+    const name: string = f.properties?.name ?? "";
     const lines: Pt[][] =
       f.geometry.type === "MultiLineString" ? f.geometry.coordinates : [f.geometry.coordinates];
     for (const line of lines) {
       let run: Pt[] = [];
       const flush = () => {
-        const simplified = decimate(run);
-        if (simplified.length >= 2) {
-          features.push({
-            type: "Feature",
-            // Street name kept for MapLibre's symbol layers (label placement
-            // + collision happen in the engine, so names ride along free).
-            properties: { t: tier, name: f.properties?.name ?? "" },
-            geometry: { type: "LineString", coordinates: simplified.map(round5) },
-          });
+        if (run.length >= 2) {
+          const k = `${tier}|${name}`;
+          const g = groups.get(k);
+          if (g) g.push(run);
+          else groups.set(k, [run]);
         }
         run = [];
       };
-      for (const p of line) (inBbox(p) ? run.push(p) : flush());
+      for (const p of line) (inBbox(p) ? run.push(p.slice() as Pt) : flush());
       flush();
     }
   }
+
+  const features: any[] = [];
+  for (const [k, segs] of groups) {
+    const bar = k.indexOf("|");
+    const tier = Number(k.slice(0, bar));
+    const name = k.slice(bar + 1);
+    for (const chain of mergeChains(segs)) {
+      // Unnamed scraps too short to be streets (parking aisles, clipped
+      // ramp remnants) print as stray ticks — drop them.
+      if (!name && lengthMeters(chain) < 45) continue;
+      const simplified = decimate(chain);
+      if (simplified.length < 2) continue;
+      features.push({
+        type: "Feature",
+        // Street name kept for MapLibre's symbol layers (label placement
+        // + collision happen in the engine, so names ride along free).
+        properties: { t: tier, name },
+        geometry: { type: "LineString", coordinates: simplified.map(round5) },
+      });
+    }
+  }
   write("la-streets.geojson", { type: "FeatureCollection", features });
+}
+
+/**
+ * Chain same-street segments end-to-end into continuous polylines. Long lines
+ * render with clean joins and give the label engine room to set names; the
+ * per-block fragments it replaces produced choppy corners and stub labels.
+ * Stops at forks (more than one continuation), so ambiguous junctions keep
+ * their pieces separate rather than guessing.
+ */
+function mergeChains(segs: Pt[][]): Pt[][] {
+  const key = (p: Pt) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`;
+  const used = new Array(segs.length).fill(false);
+  const ends = new Map<string, number[]>();
+  segs.forEach((s, i) => {
+    for (const k of [key(s[0]), key(s[s.length - 1])]) {
+      const a = ends.get(k);
+      if (a) a.push(i);
+      else ends.set(k, [i]);
+    }
+  });
+  const out: Pt[][] = [];
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    let chain = [...segs[i]];
+    for (const atEnd of [true, false]) {
+      for (;;) {
+        const tip = atEnd ? chain[chain.length - 1] : chain[0];
+        const tk = key(tip);
+        const cands = (ends.get(tk) ?? []).filter((j) => !used[j]);
+        if (cands.length !== 1) break;
+        const s = segs[cands[0]];
+        used[cands[0]] = true;
+        const piece = key(s[0]) === tk ? s : [...s].reverse(); // piece[0] = tip
+        if (atEnd) chain = chain.concat(piece.slice(1));
+        else chain = [...piece].reverse().slice(0, -1).concat(chain);
+      }
+    }
+    out.push(chain);
+  }
+  return out;
+}
+
+/** Approximate polyline length in meters at LA's latitude. */
+function lengthMeters(line: Pt[]): number {
+  let m = 0;
+  for (let i = 1; i < line.length; i++) {
+    const dx = (line[i][0] - line[i - 1][0]) * 92_000; // meters/deg lon at 34°N
+    const dy = (line[i][1] - line[i - 1][1]) * 111_000;
+    m += Math.hypot(dx, dy);
+  }
+  return m;
 }
 
 /** Drop points that barely deviate from the line between their neighbors. */
