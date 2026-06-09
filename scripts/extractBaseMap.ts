@@ -137,6 +137,66 @@ async function coast(): Promise<void> {
   write("socal-coastline.geojson", { type: "FeatureCollection", features });
 }
 
+/**
+ * Decorative shoreline ripples — three offset echoes of the coast running
+ * seaward, like the engraved water lines on the old sheets. Pure geometry
+ * from the two committed files above (run land + coast first).
+ */
+async function ripples(): Promise<void> {
+  const landGeo = JSON.parse(fs.readFileSync(path.join(OUT_DIR, "socal-land.geojson"), "utf8"));
+  const coastGeo = JSON.parse(
+    fs.readFileSync(path.join(OUT_DIR, "socal-coastline.geojson"), "utf8")
+  );
+  const landRings: Pt[][] = landGeo.features.map((f: any) => f.geometry.coordinates[0]);
+
+  const inLand = (p: Pt): boolean => {
+    for (const ring of landRings) {
+      let ins = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i];
+        const [xj, yj] = ring[j];
+        if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) ins = !ins;
+      }
+      if (ins) return true;
+    }
+    return false;
+  };
+
+  // Per-vertex normals (averaged segment normals), one consistent seaward
+  // sign per line chosen by testing the midpoint offset against the land.
+  const offsetLine = (line: Pt[], dist: number): Pt[] => {
+    const normals: Pt[] = line.map((_, i) => {
+      const a = line[Math.max(0, i - 1)];
+      const b = line[Math.min(line.length - 1, i + 1)];
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy) || 1;
+      return [-dy / len, dx / len];
+    });
+    const mid = Math.floor(line.length / 2);
+    const probe: Pt = [line[mid][0] + normals[mid][0] * dist, line[mid][1] + normals[mid][1] * dist];
+    const sign = inLand(probe) ? -1 : 1;
+    return line.map((p, i) => [
+      p[0] + normals[i][0] * dist * sign,
+      p[1] + normals[i][1] * dist * sign,
+    ]);
+  };
+
+  const features: any[] = [];
+  for (const f of coastGeo.features) {
+    const line: Pt[] = f.geometry.coordinates;
+    if (line.length < 4) continue;
+    for (let k = 1; k <= 3; k++) {
+      features.push({
+        type: "Feature",
+        properties: { k },
+        geometry: { type: "LineString", coordinates: offsetLine(line, 0.004 * k).map(round5) },
+      });
+    }
+  }
+  write("socal-ripples.geojson", { type: "FeatureCollection", features });
+}
+
 async function roads(): Promise<void> {
   const geo = await fetchJson(`${NE}/ne_10m_roads.geojson`);
   const features: any[] = [];
@@ -257,7 +317,8 @@ function centroid(ring: Pt[]): Pt {
   return [x / ring.length, y / ring.length];
 }
 
-const tasks = { land, coast, roads, neighborhoods, cities };
+// `ripples` reads the land/coast outputs, so it runs after them.
+const tasks = { land, coast, ripples, roads, neighborhoods, cities };
 const only = process.argv[2] as keyof typeof tasks | undefined;
 (async () => {
   for (const [name, fn] of Object.entries(tasks)) {

@@ -15,13 +15,37 @@ export default function MapPage() {
   const viewerCrude = player?.crude ?? 0;
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden bg-[#0a0a0a]">
+    <div className="h-screen w-screen relative overflow-hidden bg-[#ece4d0]">
       {/* Full-screen map */}
       <HexMap
         viewerUserId={user?.id}
         onSelectHex={setSelectedHex}
         selectedHex={selectedHex}
       />
+
+      {/* Title cartouche, like the old sheets' corner block */}
+      <div
+        className="absolute top-4 right-4 px-4 py-3 text-right select-none"
+        style={{
+          background: "#ece4d0",
+          border: "1.5px solid rgba(42,54,106,0.85)",
+          boxShadow: "inset 0 0 0 3px #ece4d0, inset 0 0 0 4px rgba(42,54,106,0.5)",
+          fontFamily: "Georgia, 'Times New Roman', serif",
+          color: "rgb(42,54,106)",
+        }}
+      >
+        <div className="text-base font-bold" style={{ letterSpacing: "0.35em" }}>
+          LOS ANGELES
+        </div>
+        <div className="text-[10px]" style={{ letterSpacing: "0.2em" }}>
+          LA BREA MADRE
+        </div>
+        <div className="text-[8px] mt-1 opacity-70" style={{ letterSpacing: "0.1em" }}>
+          DAILY TICK · MIDNIGHT PT
+          <br />
+          DRAWN FROM REAL CITY RECORDS
+        </div>
+      </div>
 
       {/* HUD overlay */}
       <PlayerHUD />
@@ -39,12 +63,6 @@ export default function MapPage() {
 
       {/* Leaderboard toggle */}
       <Leaderboard />
-
-      {/* Tick legend */}
-      <div className="absolute bottom-4 right-4 text-[9px] font-mono text-[#d97706]/30 text-right space-y-0.5">
-        <div>DAILY TICK · MIDNIGHT PT</div>
-        <div>♦ CRUDE · REAL LA DATA</div>
-      </div>
     </div>
   );
 }
