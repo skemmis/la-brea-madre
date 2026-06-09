@@ -3,7 +3,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanDailyAggregates } from "./citationAggregate";
+import { cleanDailyAggregates, cleanDailyCounts } from "./citationAggregate";
 
 const TODAY = "2026-06-04";
 // lagDays defaults to 14 → newest allowed day is 2026-05-21.
@@ -62,4 +62,42 @@ test("de-duplicates a repeated day (last value wins)", () => {
   );
   assert.equal(out.length, 1);
   assert.equal(out[0].totalFine, 200);
+});
+
+// ─── cleanDailyCounts (generic single-count series) ──────────────────────────
+
+test("cleanDailyCounts: parses {day,n}, rounds, sorts oldest → newest", () => {
+  const out = cleanDailyCounts(
+    [
+      { day: "2024-03-02T00:00:00.000", n: "42.4" },
+      { day: "2024-03-01T00:00:00.000", n: "17" },
+    ],
+    { today: TODAY }
+  );
+  assert.deepEqual(out, [
+    { date: "2024-03-01", value: 17 },
+    { date: "2024-03-02", value: 42 },
+  ]);
+});
+
+test("cleanDailyCounts: honours a custom valueKey", () => {
+  const out = cleanDailyCounts(
+    [{ day: "2024-03-01T00:00:00.000", tickets: "5" }],
+    { today: TODAY, valueKey: "tickets" }
+  );
+  assert.deepEqual(out, [{ date: "2024-03-01", value: 5 }]);
+});
+
+test("cleanDailyCounts: drops future, lag-window, old, and non-positive rows", () => {
+  const out = cleanDailyCounts(
+    [
+      { day: "2034-08-01T00:00:00.000", n: "9" }, // future garbage
+      { day: "2026-06-03T00:00:00.000", n: "9" }, // inside 14-day lag
+      { day: "2009-01-01T00:00:00.000", n: "9" }, // too old
+      { day: "2024-01-01T00:00:00.000", n: "0" }, // non-positive
+      { day: "2024-02-02T00:00:00.000", n: "3" }, // kept
+    ],
+    { today: TODAY }
+  );
+  assert.deepEqual(out, [{ date: "2024-02-02", value: 3 }]);
 });

@@ -7,7 +7,7 @@ import { startBackgroundJobs } from "./backgroundJobs";
 import { runMigrations, seedHexes } from "./seed";
 import { ensureGameStateTable } from "./gameService";
 import { ensureMarketDataTable, ensureExchangeTables } from "./dataPipeline";
-import { ensureMarketRoundTable } from "./marketService";
+import { ensureExchangeRuntime } from "./exchangeService";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000", 10);
@@ -70,7 +70,7 @@ await seedHexes();
 await ensureGameStateTable();
 await ensureMarketDataTable();
 await ensureExchangeTables();
-await ensureMarketRoundTable();
+await ensureExchangeRuntime();
 
 app.listen(PORT, () => {
   console.log(`[server] La Brea Madre running on port ${PORT}`);

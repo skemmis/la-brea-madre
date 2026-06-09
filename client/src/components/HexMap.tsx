@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback } from "react";
 import DeckGL from "@deck.gl/react";
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
+import { GeoJsonLayer, PolygonLayer } from "@deck.gl/layers";
 import { Map as MapboxMap } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useQuery } from "@tanstack/react-query";
@@ -34,6 +35,32 @@ const OWNED_COLORS = [
 
 function playerColor(userId: number): [number, number, number] {
   return OWNED_COLORS[userId % OWNED_COLORS.length] as [number, number, number];
+}
+
+// A generous box around greater LA; used to dim everything outside the city.
+const WORLD_BOX: [number, number][] = [
+  [-130, 28], [-105, 28], [-105, 40], [-130, 40], [-130, 28],
+];
+
+type Ring = [number, number][];
+interface MaskPoly {
+  polygon: Ring[];
+}
+
+/**
+ * Turn the city polygon into "everything *outside* the city" mask polygons:
+ *   • the world box with the city's outer ring punched out as a hole, plus
+ *   • each enclave (Beverly Hills, Santa Monica, …) as its own filled patch.
+ * Drawn semi-transparent under the hexes so the playable city reads as a
+ * lit stage and the surroundings recede.
+ */
+function buildMask(geo: any): MaskPoly[] {
+  const geom = geo?.features?.[0]?.geometry;
+  if (!geom) return [];
+  const rings: Ring[] = geom.type === "MultiPolygon" ? geom.coordinates.flat() : geom.coordinates;
+  if (!rings.length) return [];
+  const [outer, ...enclaves] = rings;
+  return [{ polygon: [WORLD_BOX, outer] }, ...enclaves.map((r) => ({ polygon: [r] }))];
 }
 
 export interface HexData {
@@ -72,8 +99,47 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     staleTime: 30_000,
   });
 
+  // The City of Los Angeles boundary — static, served from /public, fetched once.
+  const { data: boundary } = useQuery<any>({
+    queryKey: ["la-city-boundary"],
+    queryFn: () => fetch("/geo/la-city-boundary.geojson").then((r) => r.json()),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
   const [layerId, setLayerId] = useState<LayerId>("ownership");
   const layer = getLayer(layerId);
+
+  // Dim the world outside the city limits.
+  const maskLayer = useMemo(() => {
+    const polys = buildMask(boundary);
+    if (!polys.length) return null;
+    return new PolygonLayer<MaskPoly>({
+      id: "city-mask",
+      data: polys,
+      getPolygon: (d) => d.polygon,
+      getFillColor: [8, 5, 2, 165],
+      stroked: false,
+      filled: true,
+      pickable: false,
+    });
+  }, [boundary]);
+
+  // The hard line: the city limit, always visible above the hexes.
+  const boundaryLayer = useMemo(() => {
+    if (!boundary) return null;
+    return new GeoJsonLayer({
+      id: "city-boundary",
+      data: boundary,
+      stroked: true,
+      filled: false,
+      getLineColor: [255, 198, 92, 235],
+      lineWidthUnits: "pixels",
+      getLineWidth: 2,
+      lineWidthMinPixels: 1.5,
+      pickable: false,
+    });
+  }, [boundary]);
 
   // Max value of the active metric, for normalizing the heat ramp.
   const maxMetric = useMemo(() => {
@@ -151,7 +217,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
         viewState={viewState}
         onViewStateChange={onViewStateChange}
         controller={true}
-        layers={[hexLayer]}
+        layers={[maskLayer, hexLayer, boundaryLayer]}
         getCursor={({ isHovering }) => (isHovering ? "pointer" : "grab")}
       >
         <MapboxMap

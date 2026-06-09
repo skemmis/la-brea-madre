@@ -15,12 +15,11 @@ import { db } from "./db";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import {
-  openRound,
-  listMarkets,
-  buy as buyContractsService,
-  reveal as revealMarket,
-  getPositions,
-} from "./marketService";
+  getBoard,
+  getPositions as getExchangePositions,
+  buy as buyExchange,
+  endDay,
+} from "./exchangeService";
 import { openPackFor, getCollection } from "./deckService";
 import { runDailyTick } from "./backgroundJobs";
 import {
@@ -28,6 +27,7 @@ import {
   runOilWellsCensus,
   runDeadAnimalCensus,
   runCitationHistory,
+  runMakeHistory,
   runDiagnostics,
 } from "./dataPipeline";
 import type { Action } from "@shared/core";
@@ -158,53 +158,44 @@ export function registerRoutes(app: Express) {
   app.get("/api/contests", requireAuth, (_req: Request, res: Response) => res.json([]));
   app.get("/api/contests/recent", (_req: Request, res: Response) => res.json([]));
 
-  // ── Prediction Markets ──────────────────────────────────────────────────────────
+  // ── Prediction Exchange (standing YES/NO board on a hidden clock) ────────────────
 
-  // Open markets, as players see them (no hidden answer).
-  app.get("/api/markets", async (_req: Request, res: Response) => {
+  // Today's board of open markets.
+  app.get("/api/exchange/board", async (_req: Request, res: Response) => {
     try {
-      res.json(await listMarkets());
+      res.json(await getBoard());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  // Deal a new round on a fresh hidden historical day.
-  app.post("/api/markets/open", requireAuth, async (_req: Request, res: Response) => {
-    try {
-      res.json(await openRound());
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  // Spend crude on an outcome (price moves as you buy).
-  app.post("/api/markets/:id/buy", requireAuth, async (req: Request, res: Response) => {
-    const user = req.user as any;
-    const { outcome, budget } = req.body;
-    if (typeof outcome !== "number" || typeof budget !== "number") {
-      return res.status(400).json({ error: "outcome (number) and budget (number) required" });
-    }
-    try {
-      res.json(await buyContractsService(user.id, req.params.id, outcome, budget));
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  // Reveal the hidden day and settle the market.
-  app.post("/api/markets/:id/reveal", requireAuth, async (req: Request, res: Response) => {
-    try {
-      res.json(await revealMarket(req.params.id));
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
   // The player's open positions.
-  app.get("/api/markets/positions", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/exchange/positions", requireAuth, async (req: Request, res: Response) => {
     const user = req.user as any;
-    res.json(await getPositions(user.id));
+    res.json(await getExchangePositions(user.id));
+  });
+
+  // Buy YES (0) or NO (1) on a market with crude.
+  app.post("/api/exchange/buy", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    const { marketId, outcome, budget } = req.body;
+    if (typeof marketId !== "string" || typeof outcome !== "number" || typeof budget !== "number") {
+      return res.status(400).json({ error: "marketId (string), outcome (number), budget (number) required" });
+    }
+    try {
+      res.json(await buyExchange(user.id, marketId, outcome, budget));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Settle today's markets and advance the clock.
+  app.post("/api/exchange/end-day", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      res.json(await endDay());
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // ── Deck / Packs ────────────────────────────────────────────────────────────────
@@ -271,6 +262,15 @@ export function registerRoutes(app: Express) {
   app.post("/api/admin/pipeline/history", requireAdmin, async (_req: Request, res: Response) => {
     try {
       res.json(await runCitationHistory());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Pull per-day Toyota/Honda ticket counts for the face-off market.
+  app.post("/api/admin/pipeline/makes", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      res.json(await runMakeHistory());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

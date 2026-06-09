@@ -13,11 +13,12 @@ import {
   upsertHexDeadAnimals,
   upsertCitationDaily,
   upsertCitationMarketDay,
+  upsertMetricDays,
   setPipelineMeta,
 } from "./storage";
 import { eq, sql } from "drizzle-orm";
+import { pointInCity, H3_RESOLUTION } from "./cityBoundary";
 
-const H3_RESOLUTION = 7;
 const SOCRATA_APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
 
 // California State Plane Zone 5 (EPSG:2229, NAD83, US survey feet) — the
@@ -27,12 +28,9 @@ const STATE_PLANE_5 =
   "+lat_0=33.5 +lon_0=-118 +x_0=2000000.0001016 +y_0=500000.0001016001 " +
   "+datum=NAD83 +units=us-ft +no_defs";
 
-const LA_LAT = [33, 35] as const;
-const LA_LNG = [-119.5, -117] as const;
-
-function inLA(lat: number, lng: number): boolean {
-  return lat >= LA_LAT[0] && lat <= LA_LAT[1] && lng >= LA_LNG[0] && lng <= LA_LNG[1];
-}
+// Only events inside the City of LA proper count toward the game — even in
+// hexes that straddle the boundary, the out-of-city share is dropped here.
+const inLA = pointInCity;
 
 /**
  * Parse a coordinate pair that may be either WGS84 decimal degrees or
@@ -173,7 +171,7 @@ export async function runCitationPipeline(_daysBack = 2): Promise<{
 // ─── Citation history (daily series for prediction markets) ────────────────────
 
 export { cleanDailyAggregates, type DailyAggregate } from "./citationAggregate";
-import { cleanDailyAggregates } from "./citationAggregate";
+import { cleanDailyAggregates, cleanDailyCounts } from "./citationAggregate";
 
 /**
  * Pull citywide per-day citation totals (count + summed fines), grouped
@@ -212,8 +210,61 @@ export async function runCitationHistory(days = 1200): Promise<{
       await upsertCitationMarketDay(d.date, d.citationCount, d.totalFine);
       results.stored++;
     }
+    // Feed the prediction exchange's generic metric series.
+    await upsertMetricDays("fines", cleaned.map((d) => ({ date: d.date, value: d.totalFine })));
+    await upsertMetricDays("citations", cleaned.map((d) => ({ date: d.date, value: d.citationCount })));
   } catch (err) {
     console.error("Citation history error:", err);
+    results.errors++;
+  }
+
+  return results;
+}
+
+// ─── Make face-off history (Toyota vs Honda daily ticket counts) ───────────────
+
+/**
+ * Per-day ticket counts for two car makes, feeding the "more Toyotas than
+ * Hondas?" face-off market. Same citation dataset and date range as the
+ * history above, so the two series align perfectly with the exchange calendar.
+ */
+export async function runMakeHistory(days = 1200): Promise<{
+  fetched: number;
+  stored: number;
+  errors: number;
+}> {
+  const results = { fetched: 0, stored: 0, errors: 0 };
+  const today = todayPT();
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const futureCutoff = `${tomorrow.toISOString().split("T")[0]}T00:00:00.000`;
+
+  // Socrata make codes → exchange metric names.
+  const MAKES: Record<string, string> = { TOYT: "make:TOYT", HOND: "make:HOND" };
+
+  try {
+    const url = "https://data.lacity.org/resource/4f5p-udkv.json";
+    const params: Record<string, string> = {
+      $select: "date_trunc_ymd(issue_date) AS day, make, count(1) AS n",
+      $where: `issue_date < '${futureCutoff}' AND issue_date > '2016-01-01T00:00:00.000' AND make in ('TOYT','HOND')`,
+      $group: "date_trunc_ymd(issue_date), make",
+      $order: "day DESC",
+      $limit: String(days * 2), // two makes per day
+    };
+    if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
+
+    const resp = await axios.get<any[]>(url, { params, timeout: 60000 });
+    const rows = resp.data ?? [];
+    results.fetched = rows.length;
+
+    for (const [code, metric] of Object.entries(MAKES)) {
+      const cleaned = cleanDailyCounts(rows.filter((r) => r.make === code), { today });
+      await upsertMetricDays(metric, cleaned);
+      results.stored += cleaned.length;
+    }
+  } catch (err) {
+    console.error("Make history error:", err);
     results.errors++;
   }
 
@@ -386,6 +437,33 @@ export async function runDeadAnimalCensus(): Promise<{
     results.indexed++;
   }
 
+  // Citywide per-day dead-animal counts for the prediction exchange. A separate
+  // server-side aggregate (independent of the spatial census above) so the
+  // "dead_animals" over/under market has a clean daily series to price against.
+  try {
+    const today = todayPT();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const futureCutoff = `${tomorrow.toISOString().split("T")[0]}T00:00:00.000`;
+
+    const url = "https://data.lacity.org/resource/2cy6-i7zn.json";
+    const params: Record<string, string> = {
+      $select: "date_trunc_ymd(createddate) AS day, count(1) AS n",
+      $where: `lower(type) like '%animal%' AND createddate < '${futureCutoff}'`,
+      $group: "date_trunc_ymd(createddate)",
+      $order: "day DESC",
+      $limit: "1200",
+    };
+    if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
+
+    const resp = await axios.get<any[]>(url, { params, timeout: 60000 });
+    const cleaned = cleanDailyCounts(resp.data ?? [], { today });
+    await upsertMetricDays("dead_animals", cleaned);
+  } catch (err) {
+    console.error("Dead animal history error:", err);
+    results.errors++;
+  }
+
   return results;
 }
 
@@ -511,9 +589,10 @@ export async function runFullPipeline(): Promise<void> {
   console.log("[pipeline] Starting full pipeline run...");
   const t = Date.now();
 
-  const [citations, history, wells, deadAnimals] = await Promise.allSettled([
+  const [citations, history, makes, wells, deadAnimals] = await Promise.allSettled([
     runCitationPipeline(2),
     runCitationHistory(),
+    runMakeHistory(),
     runOilWellsCensus(),
     runDeadAnimalCensus(),
   ]);
@@ -523,6 +602,8 @@ export async function runFullPipeline(): Promise<void> {
     citations.status === "fulfilled" ? citations.value : citations.reason,
     "| history:",
     history.status === "fulfilled" ? history.value : history.reason,
+    "| makes:",
+    makes.status === "fulfilled" ? makes.value : makes.reason,
     "| wells:",
     wells.status === "fulfilled" ? wells.value : wells.reason,
     "| deadAnimals:",
