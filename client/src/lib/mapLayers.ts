@@ -20,21 +20,21 @@ export const LAYERS: MapLayer[] = [
     id: "parking",
     label: "Parking",
     legend: "Citations / day",
-    ramp: [230, 70, 40],
+    ramp: [172, 50, 34], // brick-red ink
     metric: (d) => d.citationPerDay ?? 0,
   },
   {
     id: "oil",
     label: "Oil",
     legend: "Active wells per cell",
-    ramp: [235, 170, 50],
+    ramp: [168, 112, 26], // ochre ink
     metric: (d) => d.ambient?.oilWellCount ?? 0,
   },
   {
     id: "deadanimals",
     label: "Carrion",
     legend: "Dead animals / day",
-    ramp: [120, 200, 120],
+    ramp: [74, 118, 70], // pine-green ink
     metric: (d) => d.deadAnimalPerDay ?? 0,
   },
 ];
@@ -43,7 +43,10 @@ export function getLayer(id: LayerId): MapLayer {
   return LAYERS.find((l) => l.id === id) ?? LAYERS[0];
 }
 
-/** Heat color for a metric layer: dark when 0, ramp color when at the max. */
+/**
+ * Heat color for a metric layer on the paper map: the ramp color printed at
+ * increasing ink density — near-invisible at 0, a solid tint at the max.
+ */
 export function metricColor(
   ramp: [number, number, number],
   value: number,
@@ -51,7 +54,5 @@ export function metricColor(
 ): [number, number, number, number] {
   const heat = max > 0 ? Math.min(1, value / max) : 0;
   const t = Math.pow(heat, 0.6); // lift low values so they're visible
-  const base = 14;
-  const blend = (c: number) => Math.floor(base + (c - base) * t);
-  return [blend(ramp[0]), blend(ramp[1]), blend(ramp[2]), Math.floor(40 + t * 180)];
+  return [ramp[0], ramp[1], ramp[2], Math.floor(8 + t * 195)];
 }
