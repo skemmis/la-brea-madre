@@ -31,6 +31,19 @@ const NE = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/maste
 const CTH = "https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data";
 const HOODS = `${CTH}/los-angeles.geojson`;
 const COUNTY_CITIES = `${CTH}/los-angeles-county.geojson`;
+// OSM-derived LA street centerlines (the street-sweeping network), GitHub-
+// hosted so it's reachable under this environment's allowlist.
+const STREETS =
+  "https://raw.githubusercontent.com/hackforla/la-street-data/master/Intersect_StreetSweep_OSM_Modified.geojson";
+
+// Street classes worth printing, mapped to a render weight tier. Footways,
+// cycleways, steps, etc. are dropped — this is the drivable street grid.
+const STREET_TIERS: Record<string, number> = {
+  trunk: 3, primary: 3, primary_link: 3,
+  secondary: 2, secondary_link: 2,
+  tertiary: 1, tertiary_link: 1,
+  residential: 0, unclassified: 0, living_street: 0,
+};
 
 type Pt = [number, number];
 
@@ -224,6 +237,58 @@ async function roads(): Promise<void> {
   write("la-roads.geojson", { type: "FeatureCollection", features });
 }
 
+/**
+ * The surface-street grid — the dense linework that makes the sheet sing.
+ * Keeps drivable classes only, strips to a render-weight tier, clips to the
+ * viewport, and lightly decimates collinear points to keep the file small.
+ */
+async function streets(): Promise<void> {
+  const geo = await fetchJson(STREETS);
+  const features: any[] = [];
+  for (const f of geo.features) {
+    const tier = STREET_TIERS[f.properties?.fclass];
+    if (tier === undefined) continue;
+    const lines: Pt[][] =
+      f.geometry.type === "MultiLineString" ? f.geometry.coordinates : [f.geometry.coordinates];
+    for (const line of lines) {
+      let run: Pt[] = [];
+      const flush = () => {
+        const simplified = decimate(run);
+        if (simplified.length >= 2) {
+          features.push({
+            type: "Feature",
+            properties: { t: tier },
+            geometry: { type: "LineString", coordinates: simplified.map(round5) },
+          });
+        }
+        run = [];
+      };
+      for (const p of line) (inBbox(p) ? run.push(p) : flush());
+      flush();
+    }
+  }
+  write("la-streets.geojson", { type: "FeatureCollection", features });
+}
+
+/** Drop points that barely deviate from the line between their neighbors. */
+function decimate(line: Pt[], tol = 0.00004): Pt[] {
+  if (line.length <= 2) return line;
+  const out: Pt[] = [line[0]];
+  for (let i = 1; i < line.length - 1; i++) {
+    const [ax, ay] = out[out.length - 1];
+    const [bx, by] = line[i];
+    const [cx, cy] = line[i + 1];
+    // Perpendicular distance of b from segment a→c.
+    const dx = cx - ax;
+    const dy = cy - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const dist = Math.abs((bx - ax) * dy - (by - ay) * dx) / len;
+    if (dist > tol) out.push(line[i]);
+  }
+  out.push(line[line.length - 1]);
+  return out;
+}
+
 async function neighborhoods(): Promise<void> {
   const geo = await fetchJson(HOODS);
   const features: any[] = [];
@@ -318,7 +383,7 @@ function centroid(ring: Pt[]): Pt {
 }
 
 // `ripples` reads the land/coast outputs, so it runs after them.
-const tasks = { land, coast, ripples, roads, neighborhoods, cities };
+const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities };
 const only = process.argv[2] as keyof typeof tasks | undefined;
 (async () => {
   for (const [name, fn] of Object.entries(tasks)) {
