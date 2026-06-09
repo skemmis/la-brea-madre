@@ -205,7 +205,7 @@ export type HexWithDetails = HexCell & {
   ambient: HexAmbient | null;
   citationToday?: number;
   citationPerDay?: number;
-  deadAnimalPerDay?: number;
+  deadAnimalPerMonth?: number;
   ownerName?: string;
   ownerColor?: string;
   pendingContest?: boolean;

@@ -303,7 +303,7 @@ export interface HexData {
   lastTickYield: number;
   citationToday?: number;
   citationPerDay?: number;
-  deadAnimalPerDay?: number;
+  deadAnimalPerMonth?: number;
   ownerName?: string;
   ambient: {
     oilWellCount: number;
