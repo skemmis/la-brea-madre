@@ -303,6 +303,18 @@ async function streets(): Promise<void> {
  */
 function mergeChains(segs: Pt[][]): Pt[][] {
   const key = (p: Pt) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`;
+  // The sweeping source carries arterials twice (one per swept side). Without
+  // deduping, a chain folds onto the duplicate (A→B→A) and decimate then
+  // collapses the degenerate fold to nothing — gaps exactly on arterials.
+  const seen = new Set<string>();
+  segs = segs.filter((s) => {
+    const fwd = s.map(key).join(";");
+    const rev = s.map(key).reverse().join(";");
+    const canon = fwd < rev ? fwd : rev;
+    if (seen.has(canon)) return false;
+    seen.add(canon);
+    return true;
+  });
   const used = new Array(segs.length).fill(false);
   const ends = new Map<string, number[]>();
   segs.forEach((s, i) => {
@@ -354,11 +366,14 @@ function decimate(line: Pt[], tol = 0.00004): Pt[] {
     const [ax, ay] = out[out.length - 1];
     const [bx, by] = line[i];
     const [cx, cy] = line[i + 1];
-    // Perpendicular distance of b from segment a→c.
+    // Perpendicular distance of b from segment a→c — or plain distance when
+    // a and c coincide (a fold), so doubled-back points are never dropped.
     const dx = cx - ax;
     const dy = cy - ay;
-    const len = Math.hypot(dx, dy) || 1;
-    const dist = Math.abs((bx - ax) * dy - (by - ay) * dx) / len;
+    const len = Math.hypot(dx, dy);
+    const dist = len === 0
+      ? Math.hypot(bx - ax, by - ay)
+      : Math.abs((bx - ax) * dy - (by - ay) * dx) / len;
     if (dist > tol) out.push(line[i]);
   }
   out.push(line[line.length - 1]);
