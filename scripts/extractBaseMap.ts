@@ -257,7 +257,9 @@ async function streets(): Promise<void> {
         if (simplified.length >= 2) {
           features.push({
             type: "Feature",
-            properties: { t: tier },
+            // Street name kept for MapLibre's symbol layers (label placement
+            // + collision happen in the engine, so names ride along free).
+            properties: { t: tier, name: f.properties?.name ?? "" },
             geometry: { type: "LineString", coordinates: simplified.map(round5) },
           });
         }
