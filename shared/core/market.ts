@@ -139,6 +139,46 @@ export function buyContracts(
   return next;
 }
 
+/** Crude refunded for selling `shares` (>0) of `outcome` back to the maker. */
+export function quoteSellRefund(market: Market, outcome: number, shares: number): number {
+  const q2 = market.q.slice();
+  q2[outcome] -= shares;
+  return cost(market.q, market.b) - cost(q2, market.b);
+}
+
+/** Sell `shares` (>0) of an outcome back to the maker at the LMSR curve. */
+export function sellContracts(
+  state: GameState,
+  _config: GameConfig,
+  playerId: PlayerId,
+  marketId: string,
+  outcome: number,
+  shares: number
+): GameState {
+  const market = state.markets?.[marketId];
+  if (!market) throw new Error(`No such market: ${marketId}`);
+  if (market.status !== "open") throw new Error(`Market ${marketId} is closed.`);
+  if (outcome < 0 || outcome >= market.outcomes.length) throw new Error(`Bad outcome ${outcome}.`);
+  if (!(shares > 0)) throw new Error(`Share count must be positive.`);
+  const held = market.holdings[playerId]?.[outcome] ?? 0;
+  if (shares > held + EPS) {
+    throw new Error(`Not enough shares (selling ${shares.toFixed(2)}, hold ${held.toFixed(2)}).`);
+  }
+
+  const refund = quoteSellRefund(market, outcome, shares);
+  const next = clone(state);
+  const m = next.markets[marketId];
+  const p = next.players[playerId];
+  p.crude += refund;
+  m.q[outcome] -= shares;
+  m.holdings[playerId][outcome] -= shares;
+  // Selling realizes value: reduce the cost basis proportionally so settled
+  // P&L reflects what's still at risk, never below zero.
+  const basis = m.spent[playerId] ?? 0;
+  m.spent[playerId] = Math.max(0, basis - refund);
+  return next;
+}
+
 /** Resolve a market: pay each share of the winning outcome `payoutPerShare`. */
 export function resolveMarket(
   state: GameState,

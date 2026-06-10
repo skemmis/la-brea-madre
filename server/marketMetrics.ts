@@ -101,3 +101,69 @@ export function buildFaceoffMarket(
 export function eligibleTargets(series: MetricPoint[], window = 30): string[] {
   return series.slice(window).map((d) => d.date);
 }
+
+// ─── Live builders ────────────────────────────────────────────────────────────
+// The live exchange prices markets for a day whose truth doesn't exist yet:
+// lines and odds come from the trailing tail of the series, and settlement
+// happens later, when the city's records land.
+
+export interface LiveLine {
+  line: number;
+  baseRateYes: number;
+  samples: number;
+}
+
+/** Over/under line + opening odds from the last `window` points of a series. */
+export function buildLiveLine(series: MetricPoint[], window = 30): LiveLine | null {
+  if (series.length < window) return null;
+  const tail = series.slice(-window).map((d) => d.value);
+  const line = median(tail);
+  const over = tail.filter((v) => v > line).length;
+  return { line, baseRateYes: clampRate(over / window), samples: tail.length };
+}
+
+/** Opening P(A beats B) from the trailing window of two aligned series. */
+export function buildLiveFaceoff(
+  a: MetricPoint[],
+  b: MetricPoint[],
+  window = 30
+): { baseRateYes: number } | null {
+  if (a.length < window) return null;
+  const bByDate = new Map(b.map((p) => [p.date, p.value]));
+  const tail = a.slice(-window);
+  let aWins = 0;
+  for (const p of tail) if (p.value > (bByDate.get(p.date) ?? 0)) aWins++;
+  return { baseRateYes: clampRate(aWins / window) };
+}
+
+/**
+ * Same-weekday over/under: the line is the median of the last `samples`
+ * values falling on `weekday` (0=Sun..6=Sat, of the date string itself).
+ */
+export function buildWeekdayLine(
+  series: MetricPoint[],
+  weekday: number,
+  samples = 8
+): LiveLine | null {
+  const same = series.filter(
+    (p) => new Date(`${p.date}T12:00:00Z`).getUTCDay() === weekday
+  );
+  if (same.length < samples) return null;
+  const tail = same.slice(-samples).map((d) => d.value);
+  const line = median(tail);
+  const over = tail.filter((v) => v > line).length;
+  return { line, baseRateYes: clampRate(over / tail.length), samples: tail.length };
+}
+
+/** Day-of-week averages (0=Sun..6=Sat) over the last `days` points. */
+export function dowBreakdown(series: MetricPoint[], days = 180): { dow: number; avg: number; n: number }[] {
+  const tail = series.slice(-days);
+  const sums = new Array(7).fill(0);
+  const counts = new Array(7).fill(0);
+  for (const p of tail) {
+    const d = new Date(`${p.date}T12:00:00Z`).getUTCDay();
+    sums[d] += p.value;
+    counts[d]++;
+  }
+  return sums.map((s, dow) => ({ dow, avg: counts[dow] ? Math.round(s / counts[dow]) : 0, n: counts[dow] }));
+}

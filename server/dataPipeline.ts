@@ -18,6 +18,7 @@ import {
 } from "./storage";
 import { eq, sql } from "drizzle-orm";
 import { pointInCity, H3_RESOLUTION } from "./cityBoundary";
+import { MAKE_LABELS, COLOR_LABELS, VIOLATIONS } from "./exchangeBoard";
 
 const SOCRATA_APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
 
@@ -239,33 +240,64 @@ export async function runMakeHistory(days = 1200): Promise<{
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const futureCutoff = `${tomorrow.toISOString().split("T")[0]}T00:00:00.000`;
+  const url = "https://data.lacity.org/resource/4f5p-udkv.json";
 
-  // Socrata make codes → exchange metric names.
-  const MAKES: Record<string, string> = { TOYT: "make:TOYT", HOND: "make:HOND" };
+  // One grouped pull per cohort dimension; each row set fans out into one
+  // daily_metric series per cohort value (make:TOYT, color:BK, viol:SWEEP).
+  const pulls: {
+    field: string;
+    metricFor: (v: string) => string | null;
+    values: string[];
+  }[] = [
+    {
+      field: "make",
+      values: Object.keys(MAKE_LABELS),
+      metricFor: (v) => `make:${v}`,
+    },
+    {
+      field: "color",
+      values: Object.keys(COLOR_LABELS),
+      metricFor: (v) => `color:${v}`,
+    },
+    {
+      field: "violation_description",
+      values: Object.values(VIOLATIONS).map((v) => v.socrata),
+      metricFor: (v) => {
+        const key = Object.entries(VIOLATIONS).find(([, def]) => def.socrata === v)?.[0];
+        return key ? `viol:${key}` : null;
+      },
+    },
+  ];
 
-  try {
-    const url = "https://data.lacity.org/resource/4f5p-udkv.json";
-    const params: Record<string, string> = {
-      $select: "date_trunc_ymd(issue_date) AS day, make, count(1) AS n",
-      $where: `issue_date < '${futureCutoff}' AND issue_date > '2016-01-01T00:00:00.000' AND make in ('TOYT','HOND')`,
-      $group: "date_trunc_ymd(issue_date), make",
-      $order: "day DESC",
-      $limit: String(days * 2), // two makes per day
-    };
-    if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
+  for (const pull of pulls) {
+    try {
+      const list = pull.values.map((v) => `'${v.replace(/'/g, "''")}'`).join(",");
+      const params: Record<string, string> = {
+        $select: `date_trunc_ymd(issue_date) AS day, ${pull.field} AS k, count(1) AS n`,
+        $where:
+          `issue_date < '${futureCutoff}' AND issue_date > '2016-01-01T00:00:00.000'` +
+          ` AND ${pull.field} in (${list})`,
+        $group: `date_trunc_ymd(issue_date), ${pull.field}`,
+        $order: "day DESC",
+        $limit: String(days * pull.values.length),
+      };
+      if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
 
-    const resp = await axios.get<any[]>(url, { params, timeout: 60000 });
-    const rows = resp.data ?? [];
-    results.fetched = rows.length;
+      const resp = await axios.get<any[]>(url, { params, timeout: 120000 });
+      const rows = resp.data ?? [];
+      results.fetched += rows.length;
 
-    for (const [code, metric] of Object.entries(MAKES)) {
-      const cleaned = cleanDailyCounts(rows.filter((r) => r.make === code), { today });
-      await upsertMetricDays(metric, cleaned);
-      results.stored += cleaned.length;
+      for (const value of pull.values) {
+        const metric = pull.metricFor(value);
+        if (!metric) continue;
+        const cleaned = cleanDailyCounts(rows.filter((r) => r.k === value), { today });
+        await upsertMetricDays(metric, cleaned);
+        results.stored += cleaned.length;
+      }
+    } catch (err) {
+      console.error(`Cohort history error (${pull.field}):`, err);
+      results.errors++;
     }
-  } catch (err) {
-    console.error("Make history error:", err);
-    results.errors++;
   }
 
   return results;

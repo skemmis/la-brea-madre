@@ -119,6 +119,18 @@ export default function AdminPage() {
             loading={running === "diag"}
             onClick={() => runAction("diag", () => apiRequest("GET", "/api/admin/diag"))}
           />
+          <AdminButton
+            label="SETTLE EXCHANGE"
+            description="Settle any closed markets whose records have arrived"
+            loading={running === "settle"}
+            onClick={() => runAction("settle", () => apiRequest("POST", "/api/admin/exchange/settle"))}
+          />
+          <AdminButton
+            label="ROLL EXCHANGE DAY"
+            description="Settle due markets + open today's board"
+            loading={running === "roll"}
+            onClick={() => runAction("roll", () => apiRequest("POST", "/api/admin/exchange/roll"))}
+          />
         </div>
 
         {/* Last run output — fetched/indexed/errors, or the diag dump */}

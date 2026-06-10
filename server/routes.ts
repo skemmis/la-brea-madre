@@ -16,9 +16,14 @@ import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import {
   getBoard,
-  getPositions as getExchangePositions,
+  getMarketDetail,
+  getActivity,
+  getPortfolio,
+  getPublicProfile,
   buy as buyExchange,
-  endDay,
+  sell as sellExchange,
+  settleDue,
+  rollExchangeDay,
 } from "./exchangeService";
 import { openPackFor, getCollection } from "./deckService";
 import { runDailyTick } from "./backgroundJobs";
@@ -175,21 +180,54 @@ export function registerRoutes(app: Express) {
   app.get("/api/contests", requireAuth, (_req: Request, res: Response) => res.json([]));
   app.get("/api/contests/recent", (_req: Request, res: Response) => res.json([]));
 
-  // ── Prediction Exchange (standing YES/NO board on a hidden clock) ────────────────
+  // ── Prediction Exchange (the live floor: today's board, tape, portfolio) ─────────
 
-  // Today's board of open markets.
-  app.get("/api/exchange/board", async (_req: Request, res: Response) => {
+  // Today's board: trading, closed-awaiting-records, and recent results.
+  app.get("/api/exchange/board", async (req: Request, res: Response) => {
     try {
-      res.json(await getBoard());
+      const user = req.user as any;
+      res.json(await getBoard(user?.id));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  // The player's open positions.
-  app.get("/api/exchange/positions", requireAuth, async (req: Request, res: Response) => {
+  // One market in full: price history, tape, holders, research desk.
+  app.get("/api/exchange/market/:id", async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      res.json(await getMarketDetail(req.params.id, user?.id));
+    } catch (err: any) {
+      res.status(404).json({ error: err.message });
+    }
+  });
+
+  // The public tape: recent fills across the whole floor.
+  app.get("/api/exchange/activity", async (_req: Request, res: Response) => {
+    try {
+      res.json(await getActivity());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // The player's book: open positions, settled history, trades, equity curve.
+  app.get("/api/exchange/portfolio", requireAuth, async (req: Request, res: Response) => {
     const user = req.user as any;
-    res.json(await getExchangePositions(user.id));
+    try {
+      res.json(await getPortfolio(user.id));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // A player's public profile (the floor is public).
+  app.get("/api/players/:id/profile", async (req: Request, res: Response) => {
+    try {
+      res.json(await getPublicProfile(Number(req.params.id)));
+    } catch (err: any) {
+      res.status(404).json({ error: err.message });
+    }
   });
 
   // Buy YES (0) or NO (1) on a market with crude.
@@ -206,10 +244,33 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // Settle today's markets and advance the clock.
-  app.post("/api/exchange/end-day", requireAuth, async (_req: Request, res: Response) => {
+  // Sell shares back to the maker.
+  app.post("/api/exchange/sell", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    const { marketId, outcome, shares } = req.body;
+    if (typeof marketId !== "string" || typeof outcome !== "number" || typeof shares !== "number") {
+      return res.status(400).json({ error: "marketId (string), outcome (number), shares (number) required" });
+    }
     try {
-      res.json(await endDay());
+      res.json(await sellExchange(user.id, marketId, outcome, shares));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Admin: settle anything whose records have arrived (cron also does this).
+  app.post("/api/admin/exchange/settle", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      res.json(await settleDue());
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Admin: roll the exchange day (settle due + open today's board).
+  app.post("/api/admin/exchange/roll", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      res.json(await rollExchangeDay());
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }

@@ -71,6 +71,19 @@ body {
   background: rgba(42, 54, 106, 0.12);
 }
 
+/* The tape: a slow, endless crawl. Content is doubled, so -50% loops clean. */
+.ticker-track {
+  width: max-content;
+  animation: ticker 60s linear infinite;
+}
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
 /* Mapbox attribution */
 .mapboxgl-ctrl-attrib {
   font-size: 10px;
