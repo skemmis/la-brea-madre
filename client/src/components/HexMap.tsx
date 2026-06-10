@@ -42,6 +42,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
   glyphs: "/fonts/{fontstack}/{range}.pbf",
   sources: {
     land: { type: "geojson", data: "/geo/socal-land.geojson" },
+    contours: { type: "geojson", data: "/geo/socal-contours.geojson" },
     ripples: { type: "geojson", data: "/geo/socal-ripples.geojson" },
     coastline: { type: "geojson", data: "/geo/socal-coastline.geojson" },
     streets: { type: "geojson", data: "/geo/la-streets.geojson" },
@@ -65,6 +66,20 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
       type: "fill",
       source: "land",
       paint: { "fill-color": PAPER },
+    },
+    // Vintage topography: faint contour lines where the hills rise, drawn
+    // straight onto the paper beneath everything else. A very light touch —
+    // the basin floor carries none.
+    {
+      id: "contours",
+      type: "line",
+      source: "contours",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": INK_HEX,
+        "line-width": 0.5,
+        "line-opacity": ["interpolate", ["linear"], ["zoom"], 9, 0.13, 12, 0.08] as any,
+      },
     },
     // Engraved water lines: three echoes of the coast, fading seaward.
     {

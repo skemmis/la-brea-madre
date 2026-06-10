@@ -497,8 +497,124 @@ function centroid(ring: Pt[]): Pt {
   return [x / ring.length, y / ring.length];
 }
 
+/**
+ * Vintage topography: faint contour lines for the hill masses, traced from
+ * open elevation tiles (AWS terrain tiles, terrarium encoding). Contours
+ * start above the basin floor, so the flats stay clean paper and only the
+ * Santa Monicas, Verdugos, San Gabriels, etc. take the ink.
+ */
+const CONTOUR_Z = 9; // tile zoom: coarse on purpose — these are a backdrop
+const CONTOUR_STEP = 120; // meters between lines
+const CONTOUR_MIN = 120; // first line; keeps the basin clean
+
+async function contours(): Promise<void> {
+  const { PNG } = await import("pngjs");
+  const n = 2 ** CONTOUR_Z;
+  const lon2x = (lon: number) => ((lon + 180) / 360) * n;
+  const lat2y = (lat: number) =>
+    ((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n;
+  const tx0 = Math.floor(lon2x(BBOX[0]));
+  const tx1 = Math.floor(lon2x(BBOX[2]));
+  const ty0 = Math.floor(lat2y(BBOX[3]));
+  const ty1 = Math.floor(lat2y(BBOX[1]));
+  const W = (tx1 - tx0 + 1) * 256;
+  const H = (ty1 - ty0 + 1) * 256;
+
+  const grid = new Float32Array(W * H);
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      const url = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${CONTOUR_Z}/${tx}/${ty}.png`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status} ${url}`);
+      const png = PNG.sync.read(Buffer.from(await res.arrayBuffer()));
+      for (let py = 0; py < 256; py++) {
+        for (let px = 0; px < 256; px++) {
+          const i = (py * 256 + px) * 4;
+          const elev =
+            png.data[i] * 256 + png.data[i + 1] + png.data[i + 2] / 256 - 32768;
+          grid[((ty - ty0) * 256 + py) * W + (tx - tx0) * 256 + px] = elev;
+        }
+      }
+    }
+  }
+
+  // A light blur so the lines flow like a drawn sheet, not pixel stairsteps.
+  const blurred = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let sum = 0;
+      let cnt = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const yy = y + dy;
+          const xx = x + dx;
+          if (yy < 0 || yy >= H || xx < 0 || xx >= W) continue;
+          sum += grid[yy * W + xx];
+          cnt++;
+        }
+      }
+      blurred[y * W + x] = sum / cnt;
+    }
+  }
+
+  // Pixel-space → lon/lat, sampling at pixel centers.
+  const px2ll = ([x, y]: Pt): Pt => {
+    const gx = (tx0 * 256 + x + 0.5) / (n * 256);
+    const gy = (ty0 * 256 + y + 0.5) / (n * 256);
+    return [gx * 360 - 180, (Math.atan(Math.sinh(Math.PI * (1 - 2 * gy))) * 180) / Math.PI];
+  };
+
+  let maxElev = 0;
+  for (let i = 0; i < blurred.length; i++) if (blurred[i] > maxElev) maxElev = blurred[i];
+
+  const features: any[] = [];
+  for (let level = CONTOUR_MIN; level <= maxElev; level += CONTOUR_STEP) {
+    // Marching squares: one interpolated segment (or two) per boundary cell.
+    const segs: Pt[][] = [];
+    const at = (x: number, y: number) => blurred[y * W + x];
+    const lerp = (a: number, b: number) => (level - a) / (b - a);
+    for (let y = 0; y < H - 1; y++) {
+      for (let x = 0; x < W - 1; x++) {
+        const tl = at(x, y);
+        const tr = at(x + 1, y);
+        const br = at(x + 1, y + 1);
+        const bl = at(x, y + 1);
+        const idx =
+          (tl >= level ? 8 : 0) | (tr >= level ? 4 : 0) | (br >= level ? 2 : 0) | (bl >= level ? 1 : 0);
+        if (idx === 0 || idx === 15) continue;
+        const top: Pt = [x + lerp(tl, tr), y];
+        const right: Pt = [x + 1, y + lerp(tr, br)];
+        const bottom: Pt = [x + lerp(bl, br), y + 1];
+        const left: Pt = [x, y + lerp(tl, bl)];
+        const cases: Record<number, Pt[][]> = {
+          1: [[left, bottom]], 2: [[bottom, right]], 3: [[left, right]],
+          4: [[top, right]], 5: [[top, left], [bottom, right]], 6: [[top, bottom]],
+          7: [[top, left]], 8: [[top, left]], 9: [[top, bottom]],
+          10: [[top, right], [left, bottom]], 11: [[top, right]],
+          12: [[left, right]], 13: [[bottom, right]], 14: [[left, bottom]],
+        };
+        for (const s of cases[idx]) segs.push(s.map((p) => [p[0], p[1]] as Pt));
+      }
+    }
+    for (const chain of mergeChains(segs)) {
+      const ll = decimate(chain.map(px2ll), 0.0002);
+      // Skip specks — a backdrop wants ridgelines, not noise.
+      if (ll.length < 2 || lengthMeters(ll) < 1200) continue;
+      features.push({
+        type: "Feature",
+        properties: { e: level },
+        geometry: {
+          type: "LineString",
+          coordinates: ll.map((p) => [Math.round(p[0] * 1e4) / 1e4, Math.round(p[1] * 1e4) / 1e4]),
+        },
+      });
+    }
+  }
+  write("socal-contours.geojson", { type: "FeatureCollection", features });
+}
+
 // `ripples` reads the land/coast outputs, so it runs after them.
-const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities };
+const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities, contours };
 const only = process.argv[2] as keyof typeof tasks | undefined;
 (async () => {
   for (const [name, fn] of Object.entries(tasks)) {
