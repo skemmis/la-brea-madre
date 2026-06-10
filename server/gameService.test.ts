@@ -64,7 +64,7 @@ suite("gameService (integration)", () => {
       .where(eq(schema.hexCells.h3Index, CENTER));
 
     const view = await gs.getPlayerView(u.id, "Ada", null);
-    assert.equal(view.crude, 123, "crude should be imported from the users table");
+    assert.equal(view.crude, 1230, "imported balances rescale to dollars (×10)");
     assert.deepEqual(view.hexIndexes, [CENTER]);
 
     const map = await gs.projectMap();
@@ -74,30 +74,42 @@ suite("gameService (integration)", () => {
     assert.equal(cell.ownerName, "Ada");
   });
 
-  it("lets a player claim their first hex for free, once per day", async () => {
+  it("claims spend Work Orders; the first hex is free money-wise", async () => {
     const u = await makeUser("Bo", 50);
 
     await gs.doAction(u.id, { type: "expand", h3: CENTER });
 
     const view = await gs.getPlayerView(u.id, "Bo", null);
-    assert.equal(view.crude, 50, "first claim is free");
+    assert.equal(view.crude, 500, "first claim is free (and $-rescaled)");
     assert.deepEqual(view.hexIndexes, [CENTER]);
-    assert.equal(await gs.hasActedToday(u.id), true);
+    assert.equal(view.workOrders, 1, "one of two starting orders spent");
+    assert.equal(await gs.outOfOrders(u.id), false);
 
-    // A second daily action this tick must be rejected.
+    // A second order is available; the third action runs dry.
     const next = RING.find((h) => h !== CENTER)!;
-    await assert.rejects(() => gs.doAction(u.id, { type: "expand", h3: next }));
+    await gs.doAction(u.id, { type: "expand", h3: next });
+    assert.equal(await gs.outOfOrders(u.id), true);
+    const third = RING.find((h) => h !== CENTER && h !== next)!;
+    await assert.rejects(() => gs.doAction(u.id, { type: "expand", h3: third }));
   });
 
-  it("runTick distributes yield and records a dispatch", async () => {
+  it("runTick pays ticket dollars and records a dispatch", async () => {
     const u = await makeUser("Cy", 50);
     await gs.doAction(u.id, { type: "expand", h3: CENTER });
 
+    // The city wrote $730 of tickets in the hex today.
+    await db.insert(schema.citationDaily).values({
+      h3Index: CENTER,
+      date: new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" }),
+      citationCount: 10,
+      totalFine: 730,
+    });
+
     const result = await gs.runTick();
-    assert.ok(result.totalYield > 0, "tick should distribute crude");
+    assert.ok(result.totalYield >= 730, "tick should pay the hex's ticket dollars");
 
     const view = await gs.getPlayerView(u.id, "Cy", null);
-    assert.ok(view.crude > 50, "owner's crude should grow after the tick");
+    assert.ok(view.crude > 500, "owner's money should grow after the tick");
 
     const dispatch = await gs.getDispatch(u.id);
     assert.equal(dispatch.entries.length, 1);

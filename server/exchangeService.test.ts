@@ -87,7 +87,7 @@ suite("exchange (integration)", () => {
     const fines = board.markets.find((m) => m.id.startsWith("fines-"))!;
 
     const bought = await ex.buy(u.id, fines.id, 0, 50);
-    assert.ok(bought.crude < 1000);
+    assert.ok(bought.crude < 10000, "money spent (balances are ×10 dollars)");
     assert.ok(bought.shares > 0);
 
     const pf = await ex.getPortfolio(u.id);

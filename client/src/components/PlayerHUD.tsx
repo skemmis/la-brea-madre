@@ -1,6 +1,6 @@
 import { usePlayer } from "../hooks/usePlayer";
 import { useAuth } from "../hooks/useAuth";
-import { Droplets, MapPin, Clock } from "lucide-react";
+import { Banknote, MapPin, ClipboardList } from "lucide-react";
 import { Link } from "wouter";
 
 export default function PlayerHUD() {
@@ -15,26 +15,23 @@ export default function PlayerHUD() {
             {player.displayName.toUpperCase()}
           </div>
           <div className="space-y-1.5">
-            <Stat icon={<Droplets size={11} />} label="CRUDE" value={player.crude} />
-            <Stat icon={<MapPin size={11} />} label="HEXES" value={player.totalHexes} />
+            <Stat icon={<Banknote size={11} />} label="BANK" value={`$${player.crude.toLocaleString()}`} />
+            <Stat icon={<MapPin size={11} />} label="PARCELS" value={String(player.totalHexes)} />
             <div className="pt-1.5 border-t border-[var(--ink-faint)]">
-              {player.todayAction ? (
-                <div
-                  className="flex items-center gap-1.5 text-[10px] text-[var(--sepia-soft)]"
-                  style={{ letterSpacing: "0.08em" }}
-                >
-                  <Clock size={10} />
-                  <span>ACTION USED · {player.todayAction.actionType.toUpperCase()}</span>
-                </div>
-              ) : (
-                <div
-                  className="flex items-center gap-1.5 text-[10px] text-[var(--pine)]"
-                  style={{ letterSpacing: "0.08em" }}
-                >
-                  <Clock size={10} />
-                  <span>ACTION READY</span>
-                </div>
-              )}
+              <div
+                className="flex items-center gap-1.5 text-[10px]"
+                style={{
+                  letterSpacing: "0.08em",
+                  color: player.workOrders > 0 ? "var(--pine)" : "var(--sepia-soft)",
+                }}
+              >
+                <ClipboardList size={10} />
+                <span>
+                  {player.workOrders > 0
+                    ? `${player.workOrders} WORK ORDER${player.workOrders === 1 ? "" : "S"}`
+                    : "NO WORK ORDERS — carrion earns more"}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -76,7 +73,7 @@ export default function PlayerHUD() {
   );
 }
 
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="flex items-center justify-between text-xs">
       <span
@@ -86,7 +83,7 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
         {icon}
         {label}
       </span>
-      <span className="font-bold tabular-nums">{value.toLocaleString()}</span>
+      <span className="font-bold tabular-nums">{value}</span>
     </div>
   );
 }

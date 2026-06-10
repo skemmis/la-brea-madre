@@ -177,7 +177,7 @@ export function useBuyExchange() {
   return useMutation<TradeResult, Error, { marketId: string; outcome: number; budget: number }>({
     mutationFn: (body) => apiRequest("POST", "/api/exchange/buy", body),
     onSuccess: (r) => {
-      toast.success(`Filled — ${r.shares.toFixed(1)} shares for ${r.cost.toFixed(1)} crude`);
+      toast.success(`Filled — ${r.shares.toFixed(1)} shares for $${r.cost.toFixed(1)}`);
       invalidateFloor(qc);
     },
     onError: (e) => toast.error(e.message),
@@ -189,7 +189,7 @@ export function useSellExchange() {
   return useMutation<TradeResult, Error, { marketId: string; outcome: number; shares: number }>({
     mutationFn: (body) => apiRequest("POST", "/api/exchange/sell", body),
     onSuccess: (r) => {
-      toast.success(`Sold — ${(-r.cost).toFixed(1)} crude returned`);
+      toast.success(`Sold — $${(-r.cost).toFixed(1)} returned`);
       invalidateFloor(qc);
     },
     onError: (e) => toast.error(e.message),

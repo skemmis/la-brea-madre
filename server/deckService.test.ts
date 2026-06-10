@@ -41,7 +41,7 @@ suite("deck service (integration)", () => {
     const result = await ds.openPackFor(u.id);
 
     assert.equal(result.drawn.length, 3);
-    assert.ok(result.crude < 100, "crude spent");
+    assert.ok(result.crude < 1000, "money spent");
     assert.equal(result.collection.length, 3, "first pack is all new");
     // Drawn cards carry their display data.
     assert.ok(result.drawn[0].name && result.drawn[0].rarity);

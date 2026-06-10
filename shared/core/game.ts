@@ -9,10 +9,11 @@
  * (h3-js is used purely for hex adjacency — deterministic geometry, no IO.)
  */
 import { gridDisk } from "h3-js";
-import { makeRng, nextFloat } from "./rng";
+import { makeRng } from "./rng";
 import { relicDef, RELICS, type YieldHookCtx } from "./relics";
 import type {
   Action,
+  ContestResult,
   DispatchEntry,
   GameConfig,
   GameEvent,
@@ -51,7 +52,14 @@ function claimCost(config: GameConfig, ownedCount: number): number {
 export function newGame(config: GameConfig, seed: number): GameState {
   const players: GameState["players"] = {};
   for (const id of config.players) {
-    players[id] = { id, crude: config.startingCrude, relics: [], cards: [], actionUsedTick: -1 };
+    players[id] = {
+      id,
+      crude: config.startingCrude,
+      relics: [],
+      cards: [],
+      workOrders: config.workOrders.starting,
+      actionUsedTick: -1,
+    };
   }
   return {
     seed,
@@ -74,6 +82,7 @@ export function addPlayer(state: GameState, config: GameConfig, playerId: Player
     crude: config.startingCrude,
     relics: [],
     cards: [],
+    workOrders: config.workOrders.starting,
     actionUsedTick: -1,
   };
   return next;
@@ -94,8 +103,15 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
     if (hx.degradation < 100) actions.push({ type: "setExploit", h3: h, on: !hx.exploited });
   }
 
-  // The one daily action (expand / upgrade / acquire relic).
-  if (player.actionUsedTick === state.tick) return actions;
+  // Defend is always available on your own embattled hexes (no order cost).
+  for (const [h3, c] of Object.entries(state.contests ?? {})) {
+    if (c.defenderId === playerId && player.crude > 0) {
+      actions.push({ type: "defend", h3, bid: 0 });
+    }
+  }
+
+  // Everything below spends a Work Order.
+  if ((player.workOrders ?? 0) < 1) return actions;
 
   // Expand: adjacent unowned board hexes (or any board hex for the first claim).
   const cost = claimCost(config, mine.length);
@@ -128,10 +144,28 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
     }
   }
 
+  // Contest: an enemy hex on your frontier, not already embattled.
+  if (player.crude >= config.combat.minBid) {
+    const frontier = new Set<string>();
+    for (const h of mine) {
+      for (const n of gridDisk(h, 1)) {
+        const owner = hexState(state, n).ownerId;
+        if (n !== h && config.board[n] && owner && owner !== playerId) frontier.add(n);
+      }
+    }
+    for (const h of frontier) {
+      if (!state.contests?.[h]) actions.push({ type: "contest", h3: h, bid: 0 });
+    }
+  }
+
   return actions;
 }
 
 function actionsEqual(a: Action, b: Action): boolean {
+  // Bids are free-form amounts — legality is about the target, not the size.
+  if ((a.type === "contest" || a.type === "defend") && a.type === b.type) {
+    return a.h3 === (b as Extract<Action, { type: "contest" | "defend" }>).h3;
+  }
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -154,7 +188,6 @@ export function applyAction(
 
   switch (action.type) {
     case "pass":
-      player.actionUsedTick = next.tick;
       break;
 
     case "setExploit": {
@@ -167,24 +200,58 @@ export function applyAction(
       const mine = ownedHexes(next, playerId);
       const cost = claimCost(config, mine.length);
       player.crude -= cost;
+      player.workOrders -= 1;
       const hx = ensureHex(action.h3);
       hx.ownerId = playerId;
-      player.actionUsedTick = next.tick;
       break;
     }
 
     case "upgrade": {
       const hx = ensureHex(action.h3);
       player.crude -= config.costs.upgrade[hx.upgradeLevel];
+      player.workOrders -= 1;
       hx.upgradeLevel += 1;
-      player.actionUsedTick = next.tick;
       break;
     }
 
     case "acquireRelic": {
       player.crude -= config.costs.relic;
+      player.workOrders -= 1;
       player.relics.push(action.relicId);
-      player.actionUsedTick = next.tick;
+      break;
+    }
+
+    case "contest": {
+      // Declare war: escrow the sealed bid, spend the order. Resolves at tick.
+      if (!(action.bid >= config.combat.minBid)) {
+        throw new Error(`A war chest needs at least $${config.combat.minBid}.`);
+      }
+      if (player.crude < action.bid) throw new Error("Not enough money for that bid.");
+      const target = hexState(next, action.h3);
+      if (!target.ownerId || target.ownerId === playerId) {
+        throw new Error("Only an enemy hex can be contested.");
+      }
+      player.crude -= action.bid;
+      player.workOrders -= 1;
+      next.contests ??= {};
+      next.contests[action.h3] = {
+        h3: action.h3,
+        attackerId: playerId,
+        defenderId: target.ownerId,
+        attackerBid: action.bid,
+        defenderBid: 0,
+        declaredTick: next.tick,
+      };
+      break;
+    }
+
+    case "defend": {
+      const c = next.contests?.[action.h3];
+      if (!c || c.defenderId !== playerId) throw new Error("No contest to defend there.");
+      if (!(action.bid > 0)) throw new Error("A defense bid must be positive.");
+      if (player.crude < action.bid) throw new Error("Not enough money for that bid.");
+      player.crude -= action.bid;
+      c.defenderBid += action.bid; // raises accumulate
       break;
     }
   }
@@ -194,9 +261,20 @@ export function applyAction(
 
 // ─── Tick: resolve one day ────────────────────────────────────────────────────
 
-export function tick(state: GameState, config: GameConfig, events: GameEvent[]): GameState {
+export interface TickOptions {
+  /** Grant the weekly free Work Order (the shell passes true on Mondays PT). */
+  weeklyFree?: boolean;
+}
+
+export function tick(
+  state: GameState,
+  config: GameConfig,
+  events: GameEvent[],
+  opts: TickOptions = {}
+): GameState {
   const next = clone(state);
   const y = config.yield;
+  const wo = config.workOrders;
 
   // Index events by hex.
   const byHex = new Map<string, GameEvent[]>();
@@ -205,8 +283,10 @@ export function tick(state: GameState, config: GameConfig, events: GameEvent[]):
     byHex.get(e.h3)!.push(e);
   }
 
-  const report: TickReport = { tick: next.tick, perPlayer: {} };
-  for (const id of Object.keys(next.players)) report.perPlayer[id] = { gained: 0, entries: [] };
+  const report: TickReport = { tick: next.tick, perPlayer: {}, contests: [] };
+  for (const id of Object.keys(next.players)) {
+    report.perPlayer[id] = { gained: 0, ordersEarned: 0, entries: [] };
+  }
 
   for (const [h3, hx] of Object.entries(next.hexes)) {
     if (!hx.ownerId) continue;
@@ -218,16 +298,15 @@ export function tick(state: GameState, config: GameConfig, events: GameEvent[]):
     const ctx: YieldHookCtx = { wells, level: hx.upgradeLevel, exploited: hx.exploited, events: hexEvents };
     const relics = player.relics.map(relicDef).filter(Boolean) as ReturnType<typeof relicDef>[];
 
-    const base = wells * y.perWell;
+    // The purse: your hexes pay what the city ticketed there ($/day), plus a
+    // little oil flavor money. Real records, real dollars — no dice.
+    const fineDollars = hexEvents
+      .filter((e) => e.kind === "fine")
+      .reduce((a, e) => a + e.magnitude, 0);
+    const base = fineDollars * y.finePayout + wells * y.perWell;
     const upgradeMult = 1 + (y.upgradeBonus[hx.upgradeLevel] ?? 0);
     const exploitMult = hx.exploited ? y.exploitMultiplier : 1;
     const degradeFactor = 1 - hx.degradation / 100;
-
-    // The daily "dice": a random swing, nudged upward by real citation activity.
-    const citationMag = hexEvents.filter((e) => e.kind === "citation").reduce((a, e) => a + e.magnitude, 0);
-    const citationKick = Math.min(y.citationInfluenceCap, citationMag * y.citationInfluence);
-    const swing = (nextFloat(next.rng) - 0.5) * 2 * y.volatility;
-    const weatherMult = Math.max(0, 1 + swing + citationKick);
 
     let relicMult = 1;
     let relicBonus = 0;
@@ -239,14 +318,22 @@ export function tick(state: GameState, config: GameConfig, events: GameEvent[]):
       if (note) notes.push(note);
     }
 
-    if (weatherMult > 1.12) notes.push("busy streets");
-    else if (weatherMult < 0.88) notes.push("quiet day");
-
     const baseYield = Math.floor(base * upgradeMult * exploitMult * degradeFactor);
     const finalYield = Math.max(
       0,
-      Math.floor(base * upgradeMult * exploitMult * degradeFactor * weatherMult * relicMult) + relicBonus
+      Math.floor(base * upgradeMult * exploitMult * degradeFactor * relicMult) + relicBonus
     );
+
+    // The city dispatches you: carrion in your territory becomes Work Orders.
+    const carrion = hexEvents
+      .filter((e) => e.kind === "deadAnimal")
+      .reduce((a, e) => a + e.magnitude, 0);
+    const orders = carrion * wo.perCarrion;
+    if (orders > 0) {
+      player.workOrders = Math.min(wo.cap, (player.workOrders ?? 0) + orders);
+      report.perPlayer[hx.ownerId].ordersEarned += orders;
+      if (carrion >= 1) notes.push("the city calls — carrion pickup");
+    }
 
     player.crude += finalYield;
     report.perPlayer[hx.ownerId].gained += finalYield;
@@ -259,6 +346,46 @@ export function tick(state: GameState, config: GameConfig, events: GameEvent[]):
       hx.degradation = Math.min(100, hx.degradation + y.exploitDegradePerTick * degradeMult);
     }
   }
+
+  // The weekly free order (Mondays, from the shell's clock).
+  if (opts.weeklyFree) {
+    for (const p of Object.values(next.players)) {
+      p.workOrders = Math.min(wo.cap, (p.workOrders ?? 0) + wo.weeklyFree);
+    }
+  }
+
+  // Resolve the wars: sealed bids open at the tick. Higher purse takes the
+  // hex; the defender wins ties; the loser recovers half their committed war
+  // chest; the winner's is spent (the city keeps it).
+  for (const c of Object.values(next.contests ?? {})) {
+    const hx = next.hexes[c.h3];
+    const attacker = next.players[c.attackerId];
+    const defender = next.players[c.defenderId];
+    // The hex changed hands or vanished since declaration: stand down, full refunds.
+    if (!hx || hx.ownerId !== c.defenderId || !attacker || !defender) {
+      if (attacker) attacker.crude += c.attackerBid;
+      if (defender) defender.crude += c.defenderBid;
+      continue;
+    }
+    const attackerWins = c.attackerBid > c.defenderBid;
+    const winnerId = attackerWins ? c.attackerId : c.defenderId;
+    if (attackerWins) {
+      hx.ownerId = c.attackerId;
+      hx.exploited = false; // spoils keep their upgrades, not their stance
+      defender.crude += c.defenderBid * config.combat.loserRefund;
+    } else {
+      attacker.crude += c.attackerBid * config.combat.loserRefund;
+    }
+    report.contests.push({
+      h3: c.h3,
+      attackerId: c.attackerId,
+      defenderId: c.defenderId,
+      attackerBid: c.attackerBid,
+      defenderBid: c.defenderBid,
+      winnerId,
+    });
+  }
+  next.contests = {};
 
   next.tick += 1;
   next.lastReport = report;

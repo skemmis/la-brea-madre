@@ -68,7 +68,7 @@ export default function MarketPage() {
             </div>
             <div className="flex gap-5 text-right">
               <Stat label="MARKETS" value={String(markets.length)} />
-              <Stat label="VOLUME" value={`${num(totalVolume)} cr`} />
+              <Stat label="VOLUME" value={`$${num(totalVolume)}`} />
               <Stat label="CLOSES" value={closesIn()} />
             </div>
           </div>
@@ -163,7 +163,7 @@ function MarketRow({ m, loggedIn }: { m: ExchangeMarket; loggedIn: boolean }) {
       <div className="flex-1 min-w-0">
         <div className="text-[13px] text-[var(--ink)] leading-snug">{m.question}</div>
         <div className="flex items-center gap-3 mt-1 text-[9.5px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.08em" }}>
-          <span>VOL {num(m.volume)}</span>
+          <span>VOL ${num(m.volume)}</span>
           <span>·</span>
           <span>{m.traders} TRADER{m.traders === 1 ? "" : "S"}</span>
           {m.state === "closed" && (

@@ -129,6 +129,7 @@ export async function getAllHexes(): Promise<HexWithDetails[]> {
       deadAnimalCount: hexAmbient.deadAnimalCount,
       baseYieldPerTick: hexAmbient.baseYieldPerTick,
       citationToday: citationDaily.citationCount,
+      totalFine: citationDaily.totalFine,
       ownerName: users.displayName,
     })
     .from(hexCells)
@@ -149,7 +150,7 @@ export async function getAllHexes(): Promise<HexWithDetails[]> {
     neighborhood: c.neighborhood,
     lastTickYield: c.lastTickYield,
     citationToday: c.citationToday ?? 0,
-    citationPerDay: round1((c.citationToday ?? 0) / citWindow),
+    fineDollarsPerDay: Math.round((c.totalFine ?? 0) / citWindow),
     deadAnimalPerMonth: round1(((c.deadAnimalCount ?? 0) / daWindow) * 30),
     ambient: c.oilWellCount !== null
       ? {

@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Droplets } from "lucide-react";
+import { Banknote } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { usePlayer } from "../hooks/usePlayer";
 import { useActivity } from "../hooks/useExchange";
@@ -31,9 +31,9 @@ export default function ExchangeMasthead({ active }: { active: "floor" | "portfo
         <div className="flex items-center gap-5">
           {user && player ? (
             <div className="flex items-center gap-1.5 text-sm text-[var(--ink)]">
-              <Droplets size={13} />
-              <span className="font-bold tabular-nums">{player.crude.toLocaleString()}</span>
-              <span className="text-[var(--sepia-soft)] text-[10px]">CRUDE</span>
+              <Banknote size={13} />
+              <span className="font-bold tabular-nums">${player.crude.toLocaleString()}</span>
+              <span className="text-[var(--sepia-soft)] text-[10px]">BANK</span>
             </div>
           ) : (
             <a

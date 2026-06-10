@@ -19,9 +19,9 @@ export const LAYERS: MapLayer[] = [
   {
     id: "parking",
     label: "Parking",
-    legend: "Citations / day",
+    legend: "Ticket $ / day",
     ramp: [172, 50, 34], // brick-red ink
-    metric: (d) => d.citationPerDay ?? 0,
+    metric: (d) => d.fineDollarsPerDay ?? 0,
   },
   {
     id: "oil",

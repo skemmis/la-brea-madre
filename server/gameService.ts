@@ -136,6 +136,29 @@ export async function getOrInitGame(): Promise<{ state: GameState; config: GameC
     await saveState(state);
   }
   const config = buildConfig(board, Object.keys(state.players));
+
+  // Hydrate older saves: contests map, Work Order balances, and the one-shot
+  // currency rescale (crude → dollars, ×10) including the cached users column.
+  let dirty = false;
+  if (!state.contests) {
+    state.contests = {};
+    dirty = true;
+  }
+  for (const p of Object.values(state.players)) {
+    if (p.workOrders === undefined) {
+      p.workOrders = 1;
+      dirty = true;
+    }
+  }
+  if ((state.economyVersion ?? 1) < 2) {
+    for (const p of Object.values(state.players)) p.crude = Math.round(p.crude * 10);
+    state.economyVersion = 2;
+    await pool.query(`UPDATE users SET crude = crude * 10`);
+    dirty = true;
+    console.log("[game] Economy v2: balances rescaled to dollars (×10).");
+  }
+  if (dirty) await saveState(state);
+
   return { state, config };
 }
 
@@ -161,7 +184,7 @@ async function buildEvents(ownedH3: string[]): Promise<GameEvent[]> {
   const daWindow = Math.max(1, meta["dead_animal_window_days"] ?? 1);
 
   const cits = await db
-    .select({ h3: citationDaily.h3Index, count: citationDaily.citationCount })
+    .select({ h3: citationDaily.h3Index, fine: citationDaily.totalFine })
     .from(citationDaily)
     .where(and(eq(citationDaily.date, todayPT()), inArray(citationDaily.h3Index, ownedH3)));
 
@@ -172,7 +195,10 @@ async function buildEvents(ownedH3: string[]): Promise<GameEvent[]> {
 
   const events: GameEvent[] = [];
   for (const c of cits) {
-    if (c.count > 0) events.push({ h3: c.h3, kind: "citation", magnitude: c.count / citWindow });
+    // The purse: ticket dollars written in the hex, per day over the window.
+    if (c.fine > 0) {
+      events.push({ h3: c.h3, kind: "fine", magnitude: Math.round(c.fine / citWindow) });
+    }
   }
   for (const d of das) {
     if (d.dead > 0) events.push({ h3: d.h3, kind: "deadAnimal", magnitude: d.dead / daWindow });
@@ -188,13 +214,14 @@ const ownedByPlayer = (state: GameState, id: PlayerId): string[] =>
 export interface ActionResult {
   ok: true;
   crude: number;
+  workOrders: number;
 }
 
-/** Whether a user has already spent their daily action this tick. */
-export async function hasActedToday(userId: number): Promise<boolean> {
+/** Whether a user is out of Work Orders (the action currency). */
+export async function outOfOrders(userId: number): Promise<boolean> {
   const { state } = await getOrInitGame();
   const p = state.players[pid(userId)];
-  return !!p && p.actionUsedTick === state.tick;
+  return !!p && (p.workOrders ?? 0) < 1;
 }
 
 /** Apply one core action for a user. Throws Error (message) on illegal moves. */
@@ -205,7 +232,7 @@ export async function doAction(userId: number, action: Action): Promise<ActionRe
 
   const next = applyAction(state, config, id, action);
   await saveState(next);
-  return { ok: true, crude: next.players[id].crude };
+  return { ok: true, crude: next.players[id].crude, workOrders: next.players[id].workOrders ?? 0 };
 }
 
 /** Whether a user can still take their daily action this tick. */
@@ -219,7 +246,6 @@ export async function getPlayerView(
   const id = pid(userId);
   const player = state.players[id];
   const hexIndexes = ownedByPlayer(state, id);
-  const acted = player.actionUsedTick === state.tick;
 
   return {
     id: userId,
@@ -229,8 +255,7 @@ export async function getPlayerView(
     totalHexes: hexIndexes.length,
     relics: player.relics,
     hexIndexes,
-    // Frontend only needs truthiness to gate the daily action.
-    todayAction: acted ? { actionType: "acted", h3Index: "" } : null,
+    workOrders: Math.floor(player.workOrders ?? 0),
     tickDate: todayPT(),
   };
 }
@@ -263,7 +288,7 @@ export interface MapHex {
   degradation: number;
   lastTickYield: number;
   citationToday: number;
-  citationPerDay: number;
+  fineDollarsPerDay: number;
   deadAnimalPerMonth: number;
   ownerName?: string;
   neighborhood: string | null;
@@ -293,6 +318,7 @@ export async function projectMap(): Promise<MapHex[]> {
       deadAnimalCount: hexAmbient.deadAnimalCount,
       baseYieldPerTick: hexAmbient.baseYieldPerTick,
       citationToday: citationDaily.citationCount,
+      totalFineToday: citationDaily.totalFine,
     })
     .from(hexCells)
     .leftJoin(hexAmbient, eq(hexCells.h3Index, hexAmbient.h3Index))
@@ -324,7 +350,7 @@ export async function projectMap(): Promise<MapHex[]> {
       degradation: hx?.degradation ?? 0,
       lastTickYield: lastYield[c.h3Index] ?? 0,
       citationToday: c.citationToday ?? 0,
-      citationPerDay: round1((c.citationToday ?? 0) / citWindow),
+      fineDollarsPerDay: Math.round((c.totalFineToday ?? 0) / citWindow),
       // Monthly rate: res-9 cells are small enough that a daily rate rounds
       // to 0.0 for almost every cell.
       deadAnimalPerMonth: round1(((c.deadAnimalCount ?? 0) / daWindow) * 30),
@@ -339,7 +365,7 @@ export async function projectMap(): Promise<MapHex[]> {
               baseYieldPerTick: c.baseYieldPerTick ?? 1,
             }
           : null,
-      pendingContest: false, // PvP deferred
+      pendingContest: !!state.contests?.[c.h3Index],
     };
   });
 }
@@ -381,7 +407,9 @@ export async function runTick(): Promise<{ totalYield: number; cells: number }> 
   const { state, config } = await getOrInitGame();
   const owned = Object.keys(state.hexes).filter((h) => state.hexes[h].ownerId);
   const events = await buildEvents(owned);
-  const next = coreTick(state, config, events);
+  // The weekly free Work Order arrives with Monday's tick.
+  const weeklyFree = new Date(`${todayPT()}T12:00:00Z`).getUTCDay() === 1;
+  const next = coreTick(state, config, events, { weeklyFree });
   await saveState(next);
 
   let totalYield = 0;

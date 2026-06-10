@@ -39,18 +39,18 @@ export default function PortfolioPage() {
           <>
             {/* Headline figures */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
-              <Headline label="CASH" value={`${num(Math.floor(pf.crude))} cr`} />
+              <Headline label="CASH" value={`$${num(Math.floor(pf.crude))}`} />
               <Headline
                 label="AT MARK"
-                value={`${pf.stats.openValue.toFixed(1)} cr`}
-                sub={`on ${pf.stats.openSpent.toFixed(1)} staked`}
+                value={`$${pf.stats.openValue.toFixed(1)}`}
+                sub={`on $${pf.stats.openSpent.toFixed(1)} staked`}
               />
               <Headline
                 label="REALIZED P&L"
-                value={`${signed(pf.stats.realized)} cr`}
+                value={`${signed(pf.stats.realized)}`}
                 tone={pnlColor(pf.stats.realized)}
               />
-              <Headline label="LIFETIME VOLUME" value={`${num(pf.stats.volume)} cr`} />
+              <Headline label="LIFETIME VOLUME" value={`$${num(pf.stats.volume)}`} />
               <Headline
                 label="RECORD"
                 value={`${pf.stats.wins}–${pf.stats.settledMarkets - pf.stats.wins}`}
@@ -111,7 +111,7 @@ export default function PortfolioPage() {
                         </div>
                       </div>
                       <div className="text-right shrink-0 tabular-nums">
-                        <div className="text-[12px] font-bold">{p.value.toFixed(1)} cr</div>
+                        <div className="text-[12px] font-bold">${p.value.toFixed(1)}</div>
                         <div className="text-[10px] font-bold" style={{ color: pnlColor(pnl) }}>
                           {signed(pnl)}
                         </div>
@@ -137,7 +137,7 @@ export default function PortfolioPage() {
                       <div className="text-[9.5px] text-[var(--sepia-soft)] mt-0.5">
                         {h.targetDate} · settled{" "}
                         <b style={{ color: h.outcome === "YES" ? "var(--pine)" : "var(--brick)" }}>{h.outcome}</b> ·
-                        staked {h.spent.toFixed(1)}, paid {h.payout.toFixed(1)}
+                        staked ${h.spent.toFixed(1)}, paid ${h.payout.toFixed(1)}
                       </div>
                     </div>
                     <div
@@ -169,7 +169,7 @@ export default function PortfolioPage() {
                       <span className="opacity-75">— {t.question ?? t.marketId}</span>
                     </span>
                     <span className="tabular-nums text-[10px] text-[var(--sepia-soft)] shrink-0">
-                      {Math.abs(t.cost).toFixed(1)} cr ·{" "}
+                      ${Math.abs(t.cost).toFixed(1)} ·{" "}
                       {new Date(t.at).toLocaleDateString("en-US", {
                         month: "short",
                         day: "numeric",

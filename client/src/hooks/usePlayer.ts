@@ -6,10 +6,10 @@ interface PlayerState {
   id: number;
   displayName: string;
   avatarUrl: string | null;
-  crude: number;
+  crude: number; // bankroll, in dollars (the field name is a fossil)
   totalHexes: number;
   hexIndexes: string[];
-  todayAction: { actionType: string; h3Index: string } | null;
+  workOrders: number;
   tickDate: string;
 }
 
@@ -22,15 +22,19 @@ export function usePlayer(enabled = true) {
   });
 }
 
+function invalidateTerritory(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["/api/player/me"] });
+  qc.invalidateQueries({ queryKey: ["/api/map/hexes"] });
+}
+
 export function useClaimHex() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (h3Index: string) =>
       apiRequest("POST", "/api/territory/claim", { h3Index }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/player/me"] });
-      qc.invalidateQueries({ queryKey: ["/api/map/hexes"] });
-      toast.success("Hex claimed. The crude is yours.");
+      invalidateTerritory(qc);
+      toast.success("Parcel claimed. The meter money is yours.");
     },
     onError: (err: Error) => {
       toast.error(err.message);
@@ -44,9 +48,8 @@ export function useUpgradeHex() {
     mutationFn: (h3Index: string) =>
       apiRequest("POST", "/api/territory/upgrade", { h3Index }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/player/me"] });
-      qc.invalidateQueries({ queryKey: ["/api/map/hexes"] });
-      toast.success("Hex upgraded.");
+      invalidateTerritory(qc);
+      toast.success("Parcel upgraded.");
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -69,15 +72,27 @@ export function useExploitHex() {
   });
 }
 
-export function useRaidHex() {
+export function useContestHex() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (h3Index: string) =>
-      apiRequest("POST", "/api/territory/raid", { h3Index }),
-    onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/player/me"] });
-      qc.invalidateQueries({ queryKey: ["/api/map/hexes"] });
-      toast.success(`Contest initiated. Resolves at midnight PT.`);
+    mutationFn: ({ h3Index, bid }: { h3Index: string; bid: number }) =>
+      apiRequest("POST", "/api/territory/contest", { h3Index, bid }),
+    onSuccess: () => {
+      invalidateTerritory(qc);
+      toast.success("War declared — sealed bids open at midnight PT.");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useDefendHex() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ h3Index, bid }: { h3Index: string; bid: number }) =>
+      apiRequest("POST", "/api/territory/defend", { h3Index, bid }),
+    onSuccess: () => {
+      invalidateTerritory(qc);
+      toast.success("Defense committed. Hold the line.");
     },
     onError: (err: Error) => toast.error(err.message),
   });

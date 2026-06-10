@@ -59,7 +59,7 @@ test("expansion is limited to the adjacent frontier", () => {
   assert.deepEqual(targets, expected);
 });
 
-test("only one daily action is allowed per tick", () => {
+test("actions deplete Work Orders and stop at zero", () => {
   let s = start();
   s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
   s = tick(s, cfg, []);
@@ -117,4 +117,78 @@ test("addPlayer adds a newcomer and is a no-op if already present", () => {
   const before = JSON.stringify(s);
   s = addPlayer(s, cfg, "42");
   assert.equal(JSON.stringify(s), before, "second add should change nothing");
+});
+
+test("fine events pay real dollars to the hex owner", () => {
+  let s = start();
+  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
+  const before = s.players["1"].crude;
+  s = tick(s, cfg, [{ h3: CENTER, kind: "fine", magnitude: 730 }]);
+  // $730 of tickets + 2 wells × $5 flavor = $740, no dice.
+  assert.equal(s.players["1"].crude, before + 740);
+  assert.equal(s.lastReport!.perPlayer["1"].gained, 740);
+});
+
+test("carrion in your territory earns Work Orders, capped", () => {
+  let s = start();
+  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
+  const before = s.players["1"].workOrders;
+  s = tick(s, cfg, [{ h3: CENTER, kind: "deadAnimal", magnitude: 3 }]);
+  assert.equal(s.players["1"].workOrders, before + 3);
+  s = tick(s, cfg, [{ h3: CENTER, kind: "deadAnimal", magnitude: 99 }]);
+  assert.equal(s.players["1"].workOrders, cfg.workOrders.cap);
+});
+
+test("the weekly free order arrives when the shell says it's Monday", () => {
+  let s = start();
+  const before = s.players["1"].workOrders;
+  s = tick(s, cfg, [], { weeklyFree: true });
+  assert.equal(s.players["1"].workOrders, before + cfg.workOrders.weeklyFree);
+});
+
+test("a sealed-bid contest: higher purse takes the hex, loser gets half back", () => {
+  const cfg2 = defaultConfig(board, ["1", "2"]);
+  let s = newGame(cfg2, 7);
+  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
+  const enemyHex = RING.find((h) => h !== CENTER)!;
+  s = applyAction(s, cfg2, "2", { type: "expand", h3: enemyHex });
+
+  // Player 1 declares war with $200; player 2 commits $120 in defense.
+  const cash1 = s.players["1"].crude;
+  const cash2 = s.players["2"].crude;
+  s = applyAction(s, cfg2, "1", { type: "contest", h3: enemyHex, bid: 200 });
+  assert.equal(s.players["1"].crude, cash1 - 200);
+  s = applyAction(s, cfg2, "2", { type: "defend", h3: enemyHex, bid: 120 });
+
+  s = tick(s, cfg2, []);
+  assert.equal(s.hexes[enemyHex].ownerId, "1", "attacker takes the hex");
+  assert.equal(s.players["2"].crude, cash2 - 120 + 60, "defender recovers half");
+  assert.equal(s.lastReport!.contests[0].winnerId, "1");
+  assert.deepEqual(s.contests, {}, "the war is over");
+});
+
+test("the defender wins ties and the attacker forfeits half the chest", () => {
+  const cfg2 = defaultConfig(board, ["1", "2"]);
+  let s = newGame(cfg2, 7);
+  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
+  const enemyHex = RING.find((h) => h !== CENTER)!;
+  s = applyAction(s, cfg2, "2", { type: "expand", h3: enemyHex });
+  const cash1 = s.players["1"].crude;
+  s = applyAction(s, cfg2, "1", { type: "contest", h3: enemyHex, bid: 150 });
+  s = applyAction(s, cfg2, "2", { type: "defend", h3: enemyHex, bid: 150 });
+  s = tick(s, cfg2, []);
+  assert.equal(s.hexes[enemyHex].ownerId, "2", "defender holds on a tie");
+  const yielded = s.lastReport!.perPlayer["1"].gained; // CENTER's well money
+  assert.equal(s.players["1"].crude, cash1 - 150 + 75 + yielded);
+});
+
+test("an undefended hex falls to any legal bid", () => {
+  const cfg2 = defaultConfig(board, ["1", "2"]);
+  let s = newGame(cfg2, 7);
+  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
+  const enemyHex = RING.find((h) => h !== CENTER)!;
+  s = applyAction(s, cfg2, "2", { type: "expand", h3: enemyHex });
+  s = applyAction(s, cfg2, "1", { type: "contest", h3: enemyHex, bid: cfg2.combat.minBid });
+  s = tick(s, cfg2, []);
+  assert.equal(s.hexes[enemyHex].ownerId, "1");
 });

@@ -204,7 +204,7 @@ export type DailyTick = typeof dailyTicks.$inferSelect;
 export type HexWithDetails = HexCell & {
   ambient: HexAmbient | null;
   citationToday?: number;
-  citationPerDay?: number;
+  fineDollarsPerDay?: number;
   deadAnimalPerMonth?: number;
   ownerName?: string;
   ownerColor?: string;

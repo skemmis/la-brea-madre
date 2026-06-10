@@ -13,32 +13,40 @@ export function defaultConfig(
     board,
     players,
     resolution: 7,
-    startingCrude: 50,
+    startingCrude: 500, // dollars
     maxUpgrade: 3,
     seasonLength: undefined,
     costs: {
-      claim: 10,
+      claim: 100,
       firstClaimFree: true,
-      upgrade: [20, 40, 80],
-      relic: 60,
+      upgrade: [200, 400, 800],
+      relic: 600,
     },
     yield: {
-      perWell: 3,
+      finePayout: 1, // your hexes pay what the city tickets there, 1:1
+      perWell: 5, // oil keeps a little flavor money
       upgradeBonus: [0, 0.5, 1.0, 1.5],
       exploitMultiplier: 2,
       exploitDegradePerTick: 20,
-      volatility: 0.15,
-      citationInfluence: 0.04,
-      citationInfluenceCap: 0.25,
+    },
+    workOrders: {
+      perCarrion: 1,
+      weeklyFree: 1,
+      cap: 10,
+      starting: 2,
+    },
+    combat: {
+      minBid: 50,
+      loserRefund: 0.5,
     },
     market: {
-      liquidity: 100,
+      liquidity: 1000,
       payoutPerShare: 1,
     },
     pack: {
-      cost: 25,
+      cost: 250,
       size: 3,
-      duplicateRefund: 8,
+      duplicateRefund: 80,
     },
     ...overrides,
   };

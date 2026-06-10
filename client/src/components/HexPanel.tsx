@@ -1,33 +1,53 @@
-import { X, Zap, ArrowUp, Flame } from "lucide-react";
+import { useState } from "react";
+import { X, Zap, ArrowUp, Flame, Swords, Shield } from "lucide-react";
 import type { HexData } from "./HexMap";
-import { useClaimHex, useUpgradeHex, useExploitHex } from "../hooks/usePlayer";
+import {
+  useClaimHex,
+  useUpgradeHex,
+  useExploitHex,
+  useContestHex,
+  useDefendHex,
+} from "../hooks/usePlayer";
 
 interface Props {
   hex: HexData;
   viewerUserId?: number;
-  hasActionToday: boolean;
-  viewerCrude: number;
+  workOrders: number;
+  viewerCash: number;
   onClose: () => void;
 }
 
-const UPGRADE_COST = [20, 40, 80];
-const CLAIM_COST = 10;
+const UPGRADE_COST = [200, 400, 800];
+const CLAIM_COST = 100;
+const MIN_BID = 50;
 
-export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrude, onClose }: Props) {
+const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
+export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, onClose }: Props) {
   const claim = useClaimHex();
   const upgrade = useUpgradeHex();
   const exploit = useExploitHex();
+  const contest = useContestHex();
+  const defend = useDefendHex();
+  const [bid, setBid] = useState(200);
 
   const isOwned = !!hex.ownerId;
   const isMine = hex.ownerId === viewerUserId;
   const isEnemy = isOwned && !isMine;
   const isUnowned = !isOwned;
-  const canAct = !hasActionToday && !!viewerUserId;
+  const hasOrders = workOrders >= 1;
   const depleted = hex.degradation >= 100;
 
-  const baseYield = hex.ambient?.baseYieldPerTick ?? 1;
+  // The purse: a parcel pays the ticket dollars written inside it.
+  const finePerDay = hex.fineDollarsPerDay ?? 0;
+  const wells = hex.ambient?.oilWellCount ?? 0;
   const upgradeBonus = [0, 0.5, 1.0, 1.5][hex.upgradeLevel] ?? 0;
-  const estimatedYield = Math.floor(baseYield * (1 + upgradeBonus) * (1 - hex.degradation / 100) * (hex.isExploited ? 2 : 1));
+  const estimatedYield = Math.floor(
+    (finePerDay + wells * 5) *
+      (1 + upgradeBonus) *
+      (1 - hex.degradation / 100) *
+      (hex.isExploited ? 2 : 1)
+  );
 
   return (
     <div className="plate absolute top-28 right-4 w-72 text-sm">
@@ -58,27 +78,23 @@ export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrud
             </span>
           )}
           {hex.pendingContest && (
-            <div className="mt-1 text-[var(--brick)] text-[10px]" style={{ letterSpacing: "0.08em" }}>
-              ⚡ CONTESTED — resolves at midnight PT
+            <div className="mt-1 text-[var(--brick)] text-[10px] font-bold" style={{ letterSpacing: "0.08em" }}>
+              ⚔ EMBATTLED — sealed bids open at midnight PT
             </div>
           )}
         </div>
 
-        {/* Resource data: a little printed table */}
+        {/* The ledger */}
         <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
-          <Datum label="OIL WELLS" value={String(hex.ambient?.oilWellCount ?? 0)} />
-          <Datum label="BASE YIELD" value={`${baseYield} crude/tick`} />
-          <Datum label="CITATIONS /DAY" value={(hex.citationPerDay ?? 0).toFixed(1)} />
+          <Datum label="TICKET $/DAY" value={usd(finePerDay)} />
+          <Datum label="EST. PAY /DAY" value={usd(estimatedYield)} tone={estimatedYield > finePerDay ? "pine" : undefined} />
           <Datum label="DEAD ANIMALS /MO" value={(hex.deadAnimalPerMonth ?? 0).toFixed(1)} />
           <Datum
             label="UPGRADE LVL"
             value={"▪".repeat(hex.upgradeLevel) + "▫".repeat(3 - hex.upgradeLevel)}
           />
-          <Datum
-            label="EST. YIELD"
-            value={`${estimatedYield} crude/tick`}
-            tone={estimatedYield > baseYield ? "pine" : undefined}
-          />
+          <Datum label="OIL WELLS" value={String(wells)} />
+          {isOwned && <Datum label="LAST TICK" value={usd(hex.lastTickYield)} />}
           {hex.degradation > 0 && (
             <div className="col-span-2">
               <div className="text-[var(--sepia-soft)] mb-0.5" style={{ letterSpacing: "0.08em" }}>
@@ -92,10 +108,9 @@ export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrud
               </div>
             </div>
           )}
-          {isOwned && <Datum label="LAST TICK" value={`${hex.lastTickYield} crude`} wide />}
         </div>
 
-        {/* Exploit toggle (mine only, no action cost) */}
+        {/* Exploit toggle (mine only, no order cost) */}
         {isMine && !depleted && (
           <button
             onClick={() => exploit.mutate({ h3Index: hex.h3Index, exploit: !hex.isExploited })}
@@ -107,21 +122,20 @@ export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrud
             }
           >
             <Flame size={12} />
-            {hex.isExploited ? "EXPLOITING — disable?" : "Enable exploit (×2 yield, degrades)"}
+            {hex.isExploited ? "EXPLOITING — disable?" : "Enable exploit (×2 pay, degrades)"}
           </button>
         )}
 
-        {/* Action buttons */}
+        {/* Work Order actions */}
         {viewerUserId && (
           <div className="space-y-1.5 pt-2 border-t border-[var(--ink-faint)]">
-            {hasActionToday && (
-              <p className="text-[10px] italic text-[var(--sepia-soft)]">
-                Action used today — returns at midnight PT.
-              </p>
-            )}
+            <p className="text-[10px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.1em" }}>
+              WORK ORDERS: <b className="text-[var(--ink)]">{workOrders}</b>
+              {!hasOrders && <span className="italic"> — carrion in your territory earns more</span>}
+            </p>
 
             {/* Claim */}
-            {isUnowned && canAct && (
+            {isUnowned && hasOrders && (
               <button
                 onClick={() => claim.mutate(hex.h3Index)}
                 disabled={claim.isPending}
@@ -129,28 +143,85 @@ export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrud
                 data-active="true"
               >
                 <Zap size={12} />
-                CLAIM — {CLAIM_COST} CRUDE
+                CLAIM — 1 ORDER + {usd(CLAIM_COST)}
               </button>
             )}
 
             {/* Upgrade */}
-            {isMine && hex.upgradeLevel < 3 && canAct && (
+            {isMine && hex.upgradeLevel < 3 && hasOrders && (
               <button
                 onClick={() => upgrade.mutate(hex.h3Index)}
-                disabled={upgrade.isPending || viewerCrude < UPGRADE_COST[hex.upgradeLevel]}
+                disabled={upgrade.isPending || viewerCash < UPGRADE_COST[hex.upgradeLevel]}
                 className="btn-ink w-full flex items-center gap-2 px-3 py-2 text-xs font-bold"
                 style={{ color: "var(--pine)", borderColor: "rgba(60,110,80,0.5)" }}
               >
                 <ArrowUp size={12} />
-                UPGRADE LVL {hex.upgradeLevel + 1} — {UPGRADE_COST[hex.upgradeLevel]} CRUDE
+                UPGRADE LVL {hex.upgradeLevel + 1} — 1 ORDER + {usd(UPGRADE_COST[hex.upgradeLevel])}
               </button>
             )}
 
-            {/* Raid / PvP is temporarily disabled while the core loop ships. */}
-            {isEnemy && (
-              <p className="text-[10px] italic text-[var(--sepia-soft)]">
-                Raids are temporarily disabled.
-              </p>
+            {/* Contest: declare war on a neighbor */}
+            {isEnemy && !hex.pendingContest && hasOrders && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.12em" }}>
+                    WAR CHEST
+                  </span>
+                  <input
+                    type="number"
+                    min={MIN_BID}
+                    step={50}
+                    value={bid}
+                    onChange={(e) => setBid(Math.max(0, Number(e.target.value)))}
+                    className="flex-1 bg-transparent border border-[var(--ink-faint)] px-2 py-1 text-[var(--ink)] tabular-nums text-xs"
+                  />
+                </div>
+                <button
+                  onClick={() => contest.mutate({ h3Index: hex.h3Index, bid })}
+                  disabled={contest.isPending || bid < MIN_BID || bid > viewerCash}
+                  className="btn-ink w-full flex items-center gap-2 px-3 py-2 text-xs font-bold"
+                  style={{ color: "var(--brick)", borderColor: "var(--brick)" }}
+                >
+                  <Swords size={12} />
+                  CONTEST — 1 ORDER + {usd(bid)} SEALED
+                </button>
+                <p className="text-[9px] italic text-[var(--sepia-soft)] leading-snug">
+                  Sealed bids open at midnight. Higher purse takes the parcel; ties hold;
+                  the loser recovers half their chest. Must border your territory.
+                </p>
+              </div>
+            )}
+
+            {/* Defend your embattled parcel (no order needed) */}
+            {isMine && hex.pendingContest && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-[var(--brick)] font-bold" style={{ letterSpacing: "0.12em" }}>
+                    DEFENSE
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={50}
+                    value={bid}
+                    onChange={(e) => setBid(Math.max(0, Number(e.target.value)))}
+                    className="flex-1 bg-transparent border border-[var(--ink-faint)] px-2 py-1 text-[var(--ink)] tabular-nums text-xs"
+                  />
+                </div>
+                <button
+                  onClick={() => defend.mutate({ h3Index: hex.h3Index, bid })}
+                  disabled={defend.isPending || bid <= 0 || bid > viewerCash}
+                  className="btn-ink w-full flex items-center gap-2 px-3 py-2 text-xs font-bold"
+                  data-active="true"
+                >
+                  <Shield size={12} />
+                  COMMIT {usd(bid)} TO THE DEFENSE
+                </button>
+                <p className="text-[9px] italic text-[var(--sepia-soft)] leading-snug">
+                  Commitments stack and stay sealed. You hold on a tie; if the parcel
+                  falls, half your commitment comes back.
+                </p>
+              </div>
             )}
           </div>
         )}
@@ -173,15 +244,13 @@ function Datum({
   label,
   value,
   tone,
-  wide,
 }: {
   label: string;
   value: string;
   tone?: "pine";
-  wide?: boolean;
 }) {
   return (
-    <div className={wide ? "col-span-2" : undefined}>
+    <div>
       <div className="text-[var(--sepia-soft)] mb-0.5" style={{ letterSpacing: "0.08em" }}>
         {label}
       </div>

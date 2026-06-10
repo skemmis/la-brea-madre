@@ -320,7 +320,7 @@ export interface HexData {
   degradation: number;
   lastTickYield: number;
   citationToday?: number;
-  citationPerDay?: number;
+  fineDollarsPerDay?: number;
   deadAnimalPerMonth?: number;
   ownerName?: string;
   ambient: {

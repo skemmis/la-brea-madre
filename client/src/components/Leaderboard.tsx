@@ -52,8 +52,8 @@ export default function Leaderboard() {
                   <span className="text-[11px] truncate max-w-[120px]">{p.displayName}</span>
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-right tabular-nums">
-                  <span className="text-[var(--sepia-soft)]">{p.totalHexes} hex</span>
-                  <span className="font-bold">{p.crude.toLocaleString()}♦</span>
+                  <span className="text-[var(--sepia-soft)]">{p.totalHexes} parcels</span>
+                  <span className="font-bold">${p.crude.toLocaleString()}</span>
                 </div>
               </div>
             ))}

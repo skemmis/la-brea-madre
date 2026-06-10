@@ -9,7 +9,7 @@ import {
   getLeaderboard,
   getStats,
   doAction,
-  hasActedToday,
+  outOfOrders,
 } from "./gameService";
 import { db } from "./db";
 import { users } from "@shared/schema";
@@ -118,15 +118,16 @@ export function registerRoutes(app: Express) {
 
   // ── Territory Actions ─────────────────────────────────────────────────────────
 
-  // The daily action (expand / upgrade). Validation + costs live in the core.
-  async function runDailyAction(req: Request, res: Response, action: Action) {
+  // A Work Order action (expand / upgrade / contest). Validation + costs
+  // live in the core; this just translates the out-of-orders case nicely.
+  async function runOrderAction(req: Request, res: Response, action: Action) {
     const user = req.user as any;
     try {
-      if (await hasActedToday(user.id)) {
-        return res.status(409).json({ error: "You have already used your action today" });
+      if (action.type !== "defend" && (await outOfOrders(user.id))) {
+        return res.status(409).json({ error: "No Work Orders left — carrion in your territory earns more." });
       }
       const result = await doAction(user.id, action);
-      return res.json({ ok: true, crude: result.crude });
+      return res.json(result);
     } catch (err: any) {
       return res.status(400).json({ error: err?.message ?? "That move isn't available." });
     }
@@ -137,13 +138,13 @@ export function registerRoutes(app: Express) {
     if (!h3Index || typeof h3Index !== "string") {
       return res.status(400).json({ error: "h3Index required" });
     }
-    return runDailyAction(req, res, { type: "expand", h3: h3Index });
+    return runOrderAction(req, res, { type: "expand", h3: h3Index });
   });
 
   app.post("/api/territory/upgrade", requireAuth, (req: Request, res: Response) => {
     const { h3Index } = req.body;
     if (!h3Index) return res.status(400).json({ error: "h3Index required" });
-    return runDailyAction(req, res, { type: "upgrade", h3: h3Index });
+    return runOrderAction(req, res, { type: "upgrade", h3: h3Index });
   });
 
   // Toggle exploit mode — a free stance, not the daily action.
@@ -167,10 +168,27 @@ export function registerRoutes(app: Express) {
     if (!relicId || typeof relicId !== "string") {
       return res.status(400).json({ error: "relicId required" });
     }
-    return runDailyAction(req, res, { type: "acquireRelic", relicId });
+    return runOrderAction(req, res, { type: "acquireRelic", relicId });
   });
 
-  // Raids / PvP are temporarily disabled while the core economic loop ships.
+  // Declare a sealed-bid contest on an adjacent enemy hex.
+  app.post("/api/territory/contest", requireAuth, (req: Request, res: Response) => {
+    const { h3Index, bid } = req.body;
+    if (!h3Index || typeof h3Index !== "string" || typeof bid !== "number") {
+      return res.status(400).json({ error: "h3Index (string) and bid (number) required" });
+    }
+    return runOrderAction(req, res, { type: "contest", h3: h3Index, bid });
+  });
+
+  // Counter-commit dollars to defend your embattled hex (no order needed).
+  app.post("/api/territory/defend", requireAuth, (req: Request, res: Response) => {
+    const { h3Index, bid } = req.body;
+    if (!h3Index || typeof h3Index !== "string" || typeof bid !== "number") {
+      return res.status(400).json({ error: "h3Index (string) and bid (number) required" });
+    }
+    return runOrderAction(req, res, { type: "defend", h3: h3Index, bid });
+  });
+
   app.post("/api/territory/raid", requireAuth, (_req: Request, res: Response) => {
     res.status(501).json({ error: "Raids are temporarily disabled." });
   });

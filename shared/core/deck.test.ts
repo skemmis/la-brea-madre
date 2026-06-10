@@ -26,17 +26,17 @@ function richGame(seed: number, crude = 100000) {
 }
 
 test("openPack deducts its cost and adds distinct new cards", () => {
-  const { state, drawn, refund } = openPack(richGame(42, 100), cfg, "1");
+  const { state, drawn, refund } = openPack(richGame(42, 1000), cfg, "1");
   assert.equal(drawn.length, cfg.pack.size);
   assert.equal(new Set(drawn.map((d) => d.id)).size, drawn.length, "distinct within a pack");
   assert.equal(refund, 0, "first pack has no duplicates");
-  assert.equal(state.players["1"].crude, 100 - cfg.pack.cost);
+  assert.equal(state.players["1"].crude, 1000 - cfg.pack.cost);
   assert.equal(state.players["1"].cards.length, cfg.pack.size);
 });
 
 test("openPack is deterministic for a given state", () => {
-  const a = openPack(richGame(7, 100), cfg, "1");
-  const b = openPack(richGame(7, 100), cfg, "1");
+  const a = openPack(richGame(7, 1000), cfg, "1");
+  const b = openPack(richGame(7, 1000), cfg, "1");
   assert.deepEqual(a.drawn, b.drawn);
 });
 

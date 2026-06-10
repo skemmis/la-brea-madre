@@ -15,7 +15,7 @@ export interface GameConfig {
   /** Players present at game start. */
   players: PlayerId[];
   resolution: number; // H3 resolution, for adjacency
-  startingCrude: number;
+  startingCrude: number; // starting bankroll, in dollars
   maxUpgrade: number;
   seasonLength?: number; // ticks until game over; undefined = endless
   costs: {
@@ -25,13 +25,25 @@ export interface GameConfig {
     relic: number;
   };
   yield: {
-    perWell: number;
+    /** $ paid per $ of parking fines written in an owned hex each day. */
+    finePayout: number;
+    perWell: number; // small flat $ bonus per oil well (legacy flavor)
     upgradeBonus: number[]; // additive yield bonus by upgrade level
     exploitMultiplier: number;
     exploitDegradePerTick: number;
-    volatility: number; // ± random daily swing (the "dice")
-    citationInfluence: number; // extra upside per citation/day on a hex
-    citationInfluenceCap: number;
+  };
+  workOrders: {
+    /** Orders granted per dead-animal report/day in owned territory. */
+    perCarrion: number;
+    /** Free order granted at the weekly tick (Mondays). */
+    weeklyFree: number;
+    /** Bank cap — carrion piles up only so far. */
+    cap: number;
+    starting: number;
+  };
+  combat: {
+    minBid: number; // smallest legal war chest
+    loserRefund: number; // share of the losing bid returned (0..1)
   };
   market: {
     liquidity: number; // LMSR `b` — depth + bound on the maker's max loss
@@ -65,10 +77,14 @@ export interface HexState {
 
 export interface PlayerState {
   id: PlayerId;
+  /** Bankroll in dollars. (Field name is a fossil from the oil era.) */
   crude: number;
   relics: string[];
   cards: string[]; // owned deck-building cards (unique; passive effects)
-  actionUsedTick: number; // tick index of last daily action (-1 = none)
+  /** Work Orders: the action currency, earned from carrion in your territory. */
+  workOrders: number;
+  /** @deprecated pre-WorkOrder daily-action marker; kept for old saves. */
+  actionUsedTick: number;
 }
 
 export interface DispatchEntry {
@@ -80,7 +96,31 @@ export interface DispatchEntry {
 
 export interface TickReport {
   tick: number;
-  perPlayer: Record<PlayerId, { gained: number; entries: DispatchEntry[] }>;
+  perPlayer: Record<
+    PlayerId,
+    { gained: number; ordersEarned: number; entries: DispatchEntry[] }
+  >;
+  contests: ContestResult[];
+}
+
+// ─── Contests (sealed-bid wars over owned hexes) ───────────────────────────────
+
+export interface Contest {
+  h3: string;
+  attackerId: PlayerId;
+  defenderId: PlayerId;
+  attackerBid: number; // escrowed $
+  defenderBid: number; // escrowed $ (0 until the defender commits)
+  declaredTick: number;
+}
+
+export interface ContestResult {
+  h3: string;
+  attackerId: PlayerId;
+  defenderId: PlayerId;
+  attackerBid: number;
+  defenderBid: number;
+  winnerId: PlayerId;
 }
 
 // ─── Prediction markets (the first surface) ────────────────────────────────────
@@ -133,6 +173,10 @@ export interface GameState {
   players: Record<PlayerId, PlayerState>;
   /** Sparse: only hexes that differ from the default (unowned/pristine). */
   hexes: Record<string, HexState>;
+  /** Open sealed-bid contests, keyed by the embattled hex. */
+  contests?: Record<string, Contest>;
+  /** Bumped when balances are rescaled (v2 = dollars). */
+  economyVersion?: number;
   /** The most recent tick's dispatch — the "what happened overnight" reveal. */
   lastReport: TickReport | null;
   /** Open + resolved prediction markets, keyed by id. */
@@ -144,8 +188,10 @@ export interface GameState {
 // ─── Actions ───────────────────────────────────────────────────────────────────
 
 export type Action =
-  | { type: "expand"; h3: string } // claim an adjacent unowned hex
-  | { type: "upgrade"; h3: string } // deepen an owned hex
-  | { type: "acquireRelic"; relicId: string } // power up self (universal effect)
-  | { type: "setExploit"; h3: string; on: boolean } // free stance, not the daily action
+  | { type: "expand"; h3: string } // claim an adjacent unowned hex (1 order + $)
+  | { type: "upgrade"; h3: string } // deepen an owned hex (1 order + $)
+  | { type: "acquireRelic"; relicId: string } // power up self (1 order + $)
+  | { type: "contest"; h3: string; bid: number } // sealed-bid war (1 order + escrow)
+  | { type: "defend"; h3: string; bid: number } // counter-commit $ (no order)
+  | { type: "setExploit"; h3: string; on: boolean } // free stance, costs nothing
   | { type: "pass" };

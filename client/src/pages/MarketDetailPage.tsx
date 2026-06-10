@@ -48,7 +48,7 @@ export default function MarketDetailPage() {
               </div>
               <h1 className="text-xl text-[var(--ink)] mt-1 leading-snug">{data.question}</h1>
               <div className="flex gap-5 mt-2 text-[10px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.1em" }}>
-                <span>VOLUME {num(data.market.volume)} CRUDE</span>
+                <span>VOLUME ${num(data.market.volume)}</span>
                 <span>{data.market.traders} TRADER{data.market.traders === 1 ? "" : "S"}</span>
                 <span>OPENED AT {cents(data.market.baseRateYes)}</span>
                 {data.market.state === "settled" && data.market.kind !== "faceoff" && (
@@ -101,7 +101,7 @@ export default function MarketDetailPage() {
                   <div className="plate-title text-[9px] mb-2">SETTLEMENT RULES</div>
                   <p className="text-[11px] leading-relaxed italic">{data.rules}</p>
                   <p className="text-[10px] text-[var(--sepia-soft)] mt-2">
-                    Trading closes at midnight PT on the market day. Each winning share pays 1 crude.
+                    Trading closes at midnight PT on the market day. Each winning share pays $1.
                   </p>
                 </div>
 
@@ -371,7 +371,7 @@ function TradePanel({
 
           {/* Amount */}
           <label className="block text-[9px] text-[var(--sepia-soft)] mb-1" style={{ letterSpacing: "0.15em" }}>
-            {mode === "buy" ? `STAKE (CRUDE) — BANK ${num(Math.floor(crude))}` : `SHARES — HELD ${held.toFixed(1)}`}
+            {mode === "buy" ? `STAKE ($) — BANK $${num(Math.floor(crude))}` : `SHARES — HELD ${held.toFixed(1)}`}
           </label>
           <input
             type="number"
@@ -384,8 +384,8 @@ function TradePanel({
 
           <div className="text-[10px] text-[var(--sepia-soft)] italic mb-3">
             {mode === "buy"
-              ? `≈ ${estShares.toFixed(1)} shares · pays ${estShares.toFixed(1)} crude if ${side === 0 ? "YES" : "NO"}`
-              : `≈ ${estProceeds.toFixed(1)} crude returned at the current price`}
+              ? `≈ ${estShares.toFixed(1)} shares · pays $${estShares.toFixed(1)} if ${side === 0 ? "YES" : "NO"}`
+              : `≈ $${estProceeds.toFixed(1)} returned at the current price`}
           </div>
 
           <button
@@ -416,7 +416,7 @@ function TradePanel({
               </div>
               <div className="flex justify-between">
                 <span className="text-[var(--sepia-soft)]">Cost basis</span>
-                <span className="tabular-nums">{mySpent.toFixed(1)} cr</span>
+                <span className="tabular-nums">${mySpent.toFixed(1)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[var(--sepia-soft)]">Mark value</span>
@@ -424,7 +424,7 @@ function TradePanel({
                   className="tabular-nums font-bold"
                   style={{ color: positionValue >= mySpent ? "var(--pine)" : "var(--brick)" }}
                 >
-                  {positionValue.toFixed(1)} cr
+                  ${positionValue.toFixed(1)}
                 </span>
               </div>
             </div>

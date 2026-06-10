@@ -11,8 +11,8 @@ export default function MapPage() {
   const { data: player } = usePlayer(!!user);
   const [selectedHex, setSelectedHex] = useState<HexData | null>(null);
 
-  const hasActionToday = !!player?.todayAction;
-  const viewerCrude = player?.crude ?? 0;
+  const workOrders = player?.workOrders ?? 0;
+  const viewerCash = player?.crude ?? 0;
 
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[#ece4d0]">
@@ -46,8 +46,8 @@ export default function MapPage() {
         <HexPanel
           hex={selectedHex}
           viewerUserId={user?.id}
-          hasActionToday={hasActionToday}
-          viewerCrude={viewerCrude}
+          workOrders={workOrders}
+          viewerCash={viewerCash}
           onClose={() => setSelectedHex(null)}
         />
       )}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { Droplets, Package, Sparkles, Lock } from "lucide-react";
+import { Banknote, Package, Sparkles, Lock } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { usePlayer } from "../hooks/usePlayer";
 import {
@@ -39,9 +39,9 @@ export default function DeckPage() {
         <div className="flex items-center gap-4">
           {player && (
             <div className="flex items-center gap-1.5 text-sm text-[var(--ink)]">
-              <Droplets size={13} />
-              <span className="font-bold tabular-nums">{player.crude.toLocaleString()}</span>
-              <span className="text-[var(--sepia-soft)] text-[10px]">CRUDE</span>
+              <Banknote size={13} />
+              <span className="font-bold tabular-nums">${player.crude.toLocaleString()}</span>
+              <span className="text-[var(--sepia-soft)] text-[10px]">BANK</span>
             </div>
           )}
           <nav className="flex gap-3 text-[10px] text-[var(--ink)]" style={{ letterSpacing: "0.2em" }}>
@@ -93,7 +93,7 @@ export default function DeckPage() {
                 data-active="true"
               >
                 <Package size={14} />
-                OPEN PACK · {deck?.packCost ?? "…"} CRUDE
+                OPEN PACK · ${deck?.packCost ?? "…"}
               </button>
             </div>
 
@@ -160,7 +160,7 @@ function PackReveal({ result, onClose }: { result: OpenPackResult; onClose: () =
         </div>
         <div className="text-center text-[11px] text-[var(--sepia-soft)] italic mb-5">
           {result.refund > 0
-            ? `Duplicates melted down for +${result.refund} crude.`
+            ? `Duplicates melted down for +$${result.refund}.`
             : "All new. The deck deepens."}
         </div>
         <div className="flex justify-center">
