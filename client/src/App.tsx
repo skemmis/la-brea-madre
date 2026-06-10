@@ -12,9 +12,12 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#0a0a0a]">
-        <p className="text-[#d97706] font-mono tracking-widest text-sm animate-pulse">
-          INITIALIZING...
+      <div className="h-screen w-screen flex items-center justify-center bg-[var(--paper)]">
+        <p
+          className="text-[var(--ink)] text-sm animate-pulse"
+          style={{ letterSpacing: "0.3em", fontFamily: "var(--serif)" }}
+        >
+          UNROLLING THE SHEET…
         </p>
       </div>
     );
@@ -30,13 +33,15 @@ export default function App() {
         <Route component={MarketPage} />
       </Switch>
       <Toaster
-        theme="dark"
+        theme="light"
         toastOptions={{
           style: {
-            background: "#1a1209",
-            border: "1px solid #d97706",
-            color: "#e8dcc8",
-            fontFamily: "Courier New, monospace",
+            background: "var(--paper)",
+            border: "1.5px solid var(--ink-strong)",
+            borderRadius: 0,
+            boxShadow: "inset 0 0 0 3px var(--paper), inset 0 0 0 4px var(--ink-soft)",
+            color: "var(--ink)",
+            fontFamily: "var(--serif)",
             fontSize: "13px",
           },
         }}

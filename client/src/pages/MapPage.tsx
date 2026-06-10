@@ -24,16 +24,7 @@ export default function MapPage() {
       />
 
       {/* Title cartouche, like the old sheets' corner block */}
-      <div
-        className="absolute top-4 right-4 px-4 py-3 text-right select-none"
-        style={{
-          background: "#ece4d0",
-          border: "1.5px solid rgba(42,54,106,0.85)",
-          boxShadow: "inset 0 0 0 3px #ece4d0, inset 0 0 0 4px rgba(42,54,106,0.5)",
-          fontFamily: "Georgia, 'Times New Roman', serif",
-          color: "rgb(42,54,106)",
-        }}
-      >
+      <div className="plate absolute top-4 right-4 px-4 py-3 text-right select-none">
         <div className="text-base font-bold" style={{ letterSpacing: "0.35em" }}>
           LOS ANGELES
         </div>

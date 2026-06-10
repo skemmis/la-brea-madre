@@ -36,11 +36,15 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#e8dcc8] font-mono p-8">
+    <div className="min-h-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)] p-8">
       <div className="max-w-lg mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-[#d97706] text-sm tracking-[0.3em] uppercase">Admin Panel</h1>
-          <Link href="/" className="text-[10px] text-[#d97706]/40 hover:text-[#d97706]">
+        <div className="flex items-center justify-between border-b-2 border-[var(--ink-strong)] pb-3">
+          <h1 className="plate-title text-sm text-[var(--ink)]">CITY WORKS DEPARTMENT</h1>
+          <Link
+            href="/"
+            className="text-[10px] text-[var(--ink)] opacity-60 hover:opacity-100 hover:underline"
+            style={{ letterSpacing: "0.15em" }}
+          >
             ← MAP
           </Link>
         </div>
@@ -54,9 +58,14 @@ export default function AdminPage() {
               ["Owned Hexes", stats.ownedHexes],
               ["Pending Contests", stats.pendingContests],
             ].map(([label, val]) => (
-              <div key={label as string} className="border border-[#d97706]/20 p-3">
-                <div className="text-[#888] text-[10px] tracking-wide mb-1">{label}</div>
-                <div className="text-[#d97706] text-lg">{val}</div>
+              <div key={label as string} className="plate p-3">
+                <div
+                  className="text-[var(--sepia-soft)] text-[10px] mb-1"
+                  style={{ letterSpacing: "0.1em" }}
+                >
+                  {String(label).toUpperCase()}
+                </div>
+                <div className="text-lg font-bold tabular-nums">{val}</div>
               </div>
             ))}
           </div>
@@ -64,7 +73,9 @@ export default function AdminPage() {
 
         {/* Actions */}
         <div className="space-y-2">
-          <h2 className="text-[10px] text-[#888] tracking-widest">OPERATIONS</h2>
+          <h2 className="text-[10px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.25em" }}>
+            OPERATIONS
+          </h2>
 
           <AdminButton
             label="RUN DAILY TICK"
@@ -112,17 +123,23 @@ export default function AdminPage() {
 
         {/* Last run output — fetched/indexed/errors, or the diag dump */}
         {result && (
-          <div className="border border-[#d97706]/20 rounded-sm">
-            <div className="text-[10px] text-[#888] tracking-widest px-3 py-1.5 border-b border-[#d97706]/10">
+          <div className="plate">
+            <div
+              className="text-[10px] text-[var(--sepia-soft)] px-3 py-1.5 border-b border-[var(--ink-faint)]"
+              style={{ letterSpacing: "0.2em" }}
+            >
               {result.label.toUpperCase()} RESULT
             </div>
-            <pre className="text-[10px] text-[#d97706]/80 p-3 overflow-auto max-h-72 whitespace-pre-wrap">
+            <pre className="text-[10px] text-[var(--ink)] p-3 overflow-auto max-h-72 whitespace-pre-wrap font-mono">
               {JSON.stringify(result.data, null, 2)}
             </pre>
           </div>
         )}
 
-        <div className="text-[9px] text-[#555] tracking-wider pt-4 border-t border-[#d97706]/10">
+        <div
+          className="text-[9px] text-[var(--sepia-soft)] pt-4 border-t border-[var(--ink-faint)]"
+          style={{ letterSpacing: "0.12em" }}
+        >
           ADMIN EMAILS: configured via ADMIN_EMAILS env var
         </div>
       </div>
@@ -140,12 +157,14 @@ function AdminButton({ label, description, loading, onClick }: {
     <button
       onClick={onClick}
       disabled={!!loading}
-      className="w-full text-left px-3 py-2.5 border border-[#d97706]/30 hover:border-[#d97706]/60 hover:bg-[#d97706]/5 disabled:opacity-40 transition-colors rounded-sm"
+      className="btn-ink w-full text-left px-3 py-2.5 bg-[var(--paper)]"
     >
-      <div className="text-xs text-[#d97706] tracking-wide">
+      <div className="text-xs font-bold" style={{ letterSpacing: "0.1em" }}>
         {loading ? "RUNNING..." : label}
       </div>
-      <div className="text-[10px] text-[#888] mt-0.5">{description}</div>
+      <div className="text-[10px] text-[var(--sepia-soft)] mt-0.5 normal-case" style={{ letterSpacing: "0.02em" }}>
+        {description}
+      </div>
     </button>
   );
 }

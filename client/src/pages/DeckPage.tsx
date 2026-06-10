@@ -10,10 +10,11 @@ import {
   type OpenPackResult,
 } from "../hooks/useDeck";
 
+// Rarities as inks on the sheet: quiet sepia, pine, brick.
 const RARITY_COLOR: Record<string, string> = {
-  common: "#8a8a8a",
-  uncommon: "#86d97a",
-  rare: "#e0a96d",
+  common: "rgba(71,52,35,0.55)",
+  uncommon: "#3c6e50",
+  rare: "#a6543c",
 };
 
 export default function DeckPage() {
@@ -27,23 +28,25 @@ export default function DeckPage() {
   const boost = fx && (fx.payoutMult > 1 || fx.loserRefund > 0);
 
   return (
-    <div className="min-h-screen w-screen bg-[#0a0a0a] text-[#e8dcc8] font-mono">
-      <header className="flex items-center justify-between px-5 py-4 border-b border-[#d97706]/20">
+    <div className="min-h-screen w-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)]">
+      <header className="flex items-center justify-between px-5 py-4 border-b-2 border-[var(--ink-strong)]">
         <div>
-          <div className="text-[10px] text-[#d97706]/50 tracking-[0.3em] uppercase">La Brea Madre</div>
-          <div className="text-sm tracking-[0.2em] text-[#d97706]">THE COLLECTION</div>
+          <div className="text-[9px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.3em" }}>
+            LA BREA MADRE
+          </div>
+          <div className="plate-title text-sm text-[var(--ink)]">THE COLLECTION</div>
         </div>
         <div className="flex items-center gap-4">
           {player && (
-            <div className="flex items-center gap-1.5 text-sm">
-              <Droplets size={13} className="text-[#d97706]" />
-              <span className="text-[#d97706] tabular-nums">{player.crude.toLocaleString()}</span>
-              <span className="text-[#888] text-[10px]">CRUDE</span>
+            <div className="flex items-center gap-1.5 text-sm text-[var(--ink)]">
+              <Droplets size={13} />
+              <span className="font-bold tabular-nums">{player.crude.toLocaleString()}</span>
+              <span className="text-[var(--sepia-soft)] text-[10px]">CRUDE</span>
             </div>
           )}
-          <nav className="flex gap-2 text-[10px] tracking-widest text-[#d97706]/40">
-            <Link href="/" className="hover:text-[#d97706]/80">MARKET</Link>
-            <Link href="/map" className="hover:text-[#d97706]/80">MAP</Link>
+          <nav className="flex gap-3 text-[10px] text-[var(--ink)]" style={{ letterSpacing: "0.2em" }}>
+            <Link href="/" className="opacity-60 hover:opacity-100 hover:underline">MARKET</Link>
+            <Link href="/map" className="opacity-60 hover:opacity-100 hover:underline">MAP</Link>
           </nav>
         </div>
       </header>
@@ -51,7 +54,11 @@ export default function DeckPage() {
       <main className="max-w-3xl mx-auto px-5 py-8">
         {!user ? (
           <div className="text-center py-16">
-            <a href="/api/login" className="text-sm text-[#d97706]/70 hover:text-[#d97706] tracking-widest">
+            <a
+              href="/api/login"
+              className="text-sm text-[var(--ink)] hover:underline"
+              style={{ letterSpacing: "0.15em" }}
+            >
               LOGIN TO COLLECT →
             </a>
           </div>
@@ -59,16 +66,20 @@ export default function DeckPage() {
           <>
             {/* Active effects + open pack */}
             <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-              <div className="text-[11px] text-[#888]">
+              <div className="text-[11px] text-[var(--sepia-soft)] italic">
                 {boost ? (
                   <span>
                     Active:{" "}
                     {fx!.payoutMult > 1 && (
-                      <span className="text-[#86d97a]">×{fx!.payoutMult.toFixed(2)} payouts</span>
+                      <span className="text-[var(--pine)] not-italic font-bold">
+                        ×{fx!.payoutMult.toFixed(2)} payouts
+                      </span>
                     )}
-                    {fx!.payoutMult > 1 && fx!.loserRefund > 0 && <span className="text-[#888]"> · </span>}
+                    {fx!.payoutMult > 1 && fx!.loserRefund > 0 && <span> · </span>}
                     {fx!.loserRefund > 0 && (
-                      <span className="text-[#e0a96d]">{Math.round(fx!.loserRefund * 100)}% loss refund</span>
+                      <span className="text-[var(--brick)] not-italic font-bold">
+                        {Math.round(fx!.loserRefund * 100)}% loss refund
+                      </span>
                     )}
                   </span>
                 ) : (
@@ -76,11 +87,10 @@ export default function DeckPage() {
                 )}
               </div>
               <button
-                onClick={() =>
-                  openPack.mutate(undefined, { onSuccess: (data) => setReveal(data) })
-                }
+                onClick={() => openPack.mutate(undefined, { onSuccess: (data) => setReveal(data) })}
                 disabled={openPack.isPending || (deck && (player?.crude ?? 0) < deck.packCost)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#d97706]/15 border border-[#d97706]/50 text-[#d97706] text-xs rounded-sm hover:bg-[#d97706]/25 disabled:opacity-40 tracking-widest"
+                className="btn-ink inline-flex items-center gap-2 px-4 py-2 text-xs font-bold"
+                data-active="true"
               >
                 <Package size={14} />
                 OPEN PACK · {deck?.packCost ?? "…"} CRUDE
@@ -107,39 +117,40 @@ function CardTile({ card, drawnNew }: { card: CardDef; drawnNew?: boolean }) {
   const owned = card.owned ?? true;
   return (
     <div
-      className="relative rounded-sm border p-3 h-32 flex flex-col justify-between transition-colors"
+      className="relative border p-3 h-32 flex flex-col justify-between bg-[var(--paper)]"
       style={{
-        borderColor: owned ? `${color}66` : "#ffffff14",
-        background: owned ? "#0f0b07" : "#0c0a08",
-        opacity: owned ? 1 : 0.55,
+        borderColor: owned ? color : "var(--ink-faint)",
+        boxShadow: owned ? `inset 0 0 0 1px var(--paper), inset 0 0 0 2px ${color}` : undefined,
+        opacity: owned ? 1 : 0.5,
       }}
     >
       <div>
         <div className="flex items-center justify-between">
-          <span className="text-[9px] tracking-widest uppercase" style={{ color }}>
+          <span className="text-[9px] uppercase font-bold" style={{ color, letterSpacing: "0.2em" }}>
             {card.rarity}
           </span>
-          {!owned && <Lock size={11} className="text-[#555]" />}
+          {!owned && <Lock size={11} className="text-[var(--sepia-soft)]" />}
           {drawnNew && (
-            <span className="text-[8px] tracking-widest text-[#86d97a] border border-[#86d97a]/50 px-1 rounded-sm">
+            <span
+              className="text-[8px] text-[var(--pine)] border border-[var(--pine)] px-1"
+              style={{ letterSpacing: "0.15em" }}
+            >
               NEW
             </span>
           )}
         </div>
-        <div className="text-sm mt-1" style={{ color: owned ? "#e8dcc8" : "#777" }}>
-          {card.name}
-        </div>
+        <div className="text-sm mt-1 text-[var(--ink)] font-bold">{card.name}</div>
       </div>
-      <div className="text-[10px] leading-snug text-[#888]">{card.text}</div>
+      <div className="text-[10px] leading-snug text-[var(--sepia-soft)] italic">{card.text}</div>
     </div>
   );
 }
 
 function PackReveal({ result, onClose }: { result: OpenPackResult; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
-      <div className="w-full max-w-lg border border-[#d97706]/40 rounded-sm bg-[#0f0b07] p-6">
-        <div className="flex items-center justify-center gap-2 text-[10px] text-[#d97706]/50 tracking-[0.3em] mb-5">
+    <div className="fixed inset-0 bg-[rgba(40,30,16,0.55)] flex items-center justify-center p-4 z-50">
+      <div className="plate w-full max-w-lg p-6">
+        <div className="plate-title flex items-center justify-center gap-2 text-[10px] mb-5">
           <Sparkles size={12} /> THE PACK OPENS
         </div>
         <div className="grid grid-cols-3 gap-3 mb-5">
@@ -147,16 +158,13 @@ function PackReveal({ result, onClose }: { result: OpenPackResult; onClose: () =
             <CardTile key={`${c.id}-${i}`} card={{ ...c, owned: true }} drawnNew={c.isNew} />
           ))}
         </div>
-        <div className="text-center text-[11px] text-[#888] mb-5">
+        <div className="text-center text-[11px] text-[var(--sepia-soft)] italic mb-5">
           {result.refund > 0
             ? `Duplicates melted down for +${result.refund} crude.`
             : "All new. The deck deepens."}
         </div>
         <div className="flex justify-center">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 text-[11px] bg-[#d97706]/15 border border-[#d97706]/50 text-[#d97706] rounded-sm hover:bg-[#d97706]/25 tracking-widest"
-          >
+          <button onClick={onClose} className="btn-ink px-5 py-2 text-[11px] font-bold" data-active="true">
             TAKE THEM
           </button>
         </div>

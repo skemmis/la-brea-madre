@@ -1,10 +1,22 @@
 @import "tailwindcss";
 
+/*
+ * The sheet's chrome speaks the same language as the map: Prussian-blue ink
+ * and warm sepia type printed on cream paper, panels framed like the title
+ * blocks on a 1930s street sheet.
+ */
 :root {
-  --color-tar: #0a0a0a;
-  --color-crude: #1a1209;
-  --color-amber: #d97706;
-  --color-bone: #e8dcc8;
+  --paper: #ece4d0;
+  --paper-deep: #e2d7ba;
+  --ink: #2a366a;
+  --ink-faint: rgba(42, 54, 106, 0.25);
+  --ink-soft: rgba(42, 54, 106, 0.5);
+  --ink-strong: rgba(42, 54, 106, 0.85);
+  --sepia: #473423;
+  --sepia-soft: rgba(71, 52, 35, 0.6);
+  --brick: #a6543c;
+  --pine: #3c6e50;
+  --serif: Georgia, "Times New Roman", serif;
 }
 
 * {
@@ -13,10 +25,50 @@
 
 body {
   margin: 0;
-  background: var(--color-tar);
-  color: var(--color-bone);
-  font-family: "Courier New", Courier, monospace;
+  background: var(--paper);
+  color: var(--sepia);
+  font-family: var(--serif);
   overflow: hidden;
+}
+
+/* A printed plate: paper panel with the double rule of the old title blocks. */
+.plate {
+  background: var(--paper);
+  border: 1.5px solid var(--ink-strong);
+  box-shadow:
+    inset 0 0 0 3px var(--paper),
+    inset 0 0 0 4px var(--ink-soft);
+  color: var(--ink);
+  font-family: var(--serif);
+}
+
+/* Letterspaced caps, like the sheet's toponyms. */
+.plate-title {
+  font-weight: bold;
+  letter-spacing: 0.3em;
+}
+
+/* An inked button: quiet rule until pressed/active. */
+.btn-ink {
+  font-family: var(--serif);
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  border: 1px solid var(--ink-faint);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, opacity 120ms;
+}
+.btn-ink:hover:not(:disabled) {
+  border-color: var(--ink-strong);
+  background: rgba(42, 54, 106, 0.08);
+}
+.btn-ink:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn-ink[data-active="true"] {
+  border-color: var(--ink-strong);
+  background: rgba(42, 54, 106, 0.12);
 }
 
 /* Mapbox attribution */

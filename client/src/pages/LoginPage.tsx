@@ -1,29 +1,32 @@
 export default function LoginPage() {
   return (
-    <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#0a0a0a] font-mono">
-      <div className="text-center space-y-6 max-w-sm px-6">
-        <div className="space-y-1">
-          <h1 className="text-[#d97706] text-xl tracking-[0.3em] uppercase">
-            La Brea Madre
-          </h1>
-          <p className="text-[#888] text-[10px] tracking-[0.2em]">
-            TERRITORY CONTROL · LOS ANGELES · REAL DATA
+    <div className="h-screen w-screen flex flex-col items-center justify-center bg-[var(--paper)]">
+      <div className="plate text-center max-w-sm px-10 py-8 space-y-6">
+        <div className="space-y-2">
+          <div className="text-[9px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.25em" }}>
+            COMPILED FROM OFFICIAL RECORDS
+          </div>
+          <h1 className="plate-title text-xl">LA BREA MADRE</h1>
+          <div className="mx-auto w-24 border-t border-[var(--ink-soft)]" />
+          <p className="text-[10px] text-[var(--ink)]" style={{ letterSpacing: "0.2em" }}>
+            TERRITORY CONTROL · LOS ANGELES
           </p>
         </div>
 
-        <div className="text-[#e8dcc8]/60 text-xs leading-relaxed max-w-[260px] mx-auto">
+        <div className="text-[var(--sepia)] text-xs leading-relaxed italic max-w-[260px] mx-auto">
           You hold territory on a real map of Los Angeles. Real-world data flows
           through your land. The city adjudicates the war.
         </div>
 
         <a
           href="/api/login"
-          className="inline-block px-8 py-2.5 bg-[#d97706]/15 border border-[#d97706]/50 text-[#d97706] text-xs tracking-widest hover:bg-[#d97706]/25 transition-colors rounded-sm"
+          className="btn-ink inline-block px-10 py-2.5 text-xs font-bold"
+          data-active="true"
         >
           BEGIN →
         </a>
 
-        <p className="text-[#555] text-[9px] tracking-widest">
+        <p className="text-[9px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.25em" }}>
           FREE TO PLAY · NO PAY TO WIN
         </p>
       </div>

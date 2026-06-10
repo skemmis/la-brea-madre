@@ -1,6 +1,6 @@
 import { usePlayer } from "../hooks/usePlayer";
 import { useAuth } from "../hooks/useAuth";
-import { Droplets, MapPin, Clock, Trophy } from "lucide-react";
+import { Droplets, MapPin, Clock } from "lucide-react";
 import { Link } from "wouter";
 
 export default function PlayerHUD() {
@@ -9,29 +9,28 @@ export default function PlayerHUD() {
 
   return (
     <div className="absolute top-4 left-4 flex flex-col gap-2">
-      {/* Title */}
-      <div className="text-[10px] text-[#d97706]/50 tracking-[0.3em] uppercase font-mono">
-        La Brea Madre
-      </div>
-
       {user && player ? (
-        <div className="bg-[#0f0b07]/90 border border-[#d97706]/30 rounded-sm p-3 font-mono text-[#e8dcc8] min-w-[180px]">
-          <div className="text-xs text-[#d97706]/70 mb-2 tracking-wide">
+        <div className="plate p-3 min-w-[190px]">
+          <div className="text-[10px] font-bold mb-2" style={{ letterSpacing: "0.25em" }}>
             {player.displayName.toUpperCase()}
           </div>
           <div className="space-y-1.5">
             <Stat icon={<Droplets size={11} />} label="CRUDE" value={player.crude} />
             <Stat icon={<MapPin size={11} />} label="HEXES" value={player.totalHexes} />
-            <div className="pt-1 border-t border-[#d97706]/10">
+            <div className="pt-1.5 border-t border-[var(--ink-faint)]">
               {player.todayAction ? (
-                <div className="flex items-center gap-1.5 text-[10px] text-[#888]">
+                <div
+                  className="flex items-center gap-1.5 text-[10px] text-[var(--sepia-soft)]"
+                  style={{ letterSpacing: "0.08em" }}
+                >
                   <Clock size={10} />
-                  <span>
-                    ACTION USED · {player.todayAction.actionType.toUpperCase()}
-                  </span>
+                  <span>ACTION USED · {player.todayAction.actionType.toUpperCase()}</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5 text-[10px] text-[#86d97a]">
+                <div
+                  className="flex items-center gap-1.5 text-[10px] text-[var(--pine)]"
+                  style={{ letterSpacing: "0.08em" }}
+                >
                   <Clock size={10} />
                   <span>ACTION READY</span>
                 </div>
@@ -40,10 +39,11 @@ export default function PlayerHUD() {
           </div>
         </div>
       ) : (
-        <div className="bg-[#0f0b07]/90 border border-[#d97706]/20 rounded-sm p-3 font-mono">
+        <div className="plate px-3 py-2.5">
           <a
             href="/api/login"
-            className="text-xs text-[#d97706]/60 hover:text-[#d97706] tracking-widest"
+            className="text-[11px] hover:underline"
+            style={{ letterSpacing: "0.15em" }}
           >
             LOGIN TO CLAIM TERRITORY →
           </a>
@@ -51,19 +51,21 @@ export default function PlayerHUD() {
       )}
 
       {/* Nav */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 px-1">
         <Link
           href="/"
-          className="text-[10px] text-[#d97706]/40 hover:text-[#d97706]/70 font-mono tracking-widest"
+          className="text-[10px] text-[var(--ink)] opacity-60 hover:opacity-100 hover:underline"
+          style={{ letterSpacing: "0.2em" }}
         >
           MARKET
         </Link>
         {user && (
           <>
-            <span className="text-[#d97706]/20">·</span>
+            <span className="text-[var(--ink)] opacity-30">·</span>
             <Link
               href="/admin"
-              className="text-[10px] text-[#d97706]/40 hover:text-[#d97706]/70 font-mono tracking-widest"
+              className="text-[10px] text-[var(--ink)] opacity-60 hover:opacity-100 hover:underline"
+              style={{ letterSpacing: "0.2em" }}
             >
               ADMIN
             </Link>
@@ -77,11 +79,14 @@ export default function PlayerHUD() {
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
     <div className="flex items-center justify-between text-xs">
-      <span className="flex items-center gap-1 text-[#888]">
+      <span
+        className="flex items-center gap-1.5 text-[var(--sepia-soft)]"
+        style={{ letterSpacing: "0.08em" }}
+      >
         {icon}
         {label}
       </span>
-      <span className="text-[#d97706] tabular-nums">{value.toLocaleString()}</span>
+      <span className="font-bold tabular-nums">{value.toLocaleString()}</span>
     </div>
   );
 }
