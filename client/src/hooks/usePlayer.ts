@@ -68,27 +68,27 @@ export function useRepairHex() {
   });
 }
 
-export function useContestHex() {
+export function useAssessHex() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ h3Index, bid }: { h3Index: string; bid: number }) =>
-      apiRequest("POST", "/api/territory/contest", { h3Index, bid }),
+    mutationFn: ({ h3Index, price }: { h3Index: string; price: number }) =>
+      apiRequest("POST", "/api/territory/assess", { h3Index, price }),
     onSuccess: () => {
       invalidateTerritory(qc);
-      toast.success("War declared — sealed bids open at midnight PT.");
+      toast.success("Assessment filed. The county will be in touch.");
     },
     onError: (err: Error) => toast.error(err.message),
   });
 }
 
-export function useDefendHex() {
+export function useBuyoutHex() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ h3Index, bid }: { h3Index: string; bid: number }) =>
-      apiRequest("POST", "/api/territory/defend", { h3Index, bid }),
+    mutationFn: (h3Index: string) =>
+      apiRequest("POST", "/api/territory/buyout", { h3Index }),
     onSuccess: () => {
       invalidateTerritory(qc);
-      toast.success("Defense committed. Hold the line.");
+      toast.success("Sold! The deed is yours — at their price.");
     },
     onError: (err: Error) => toast.error(err.message),
   });

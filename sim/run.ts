@@ -35,7 +35,7 @@ function arg(name: string, fallback: string): string {
 const DAYS = parseInt(arg("days", "120"), 10);
 const SEED = parseInt(arg("seed", "7"), 10);
 const WORLD = arg("world", "la");
-const BOTS = arg("bots", "rentier,scavenger,sprawler,warlord,drifter").split(",");
+const BOTS = arg("bots", "rentier,scavenger,sprawler,flipper,drifter").split(",");
 const MAX_ACTIONS_PER_DAY = 8;
 
 // ─── Invariants: the rulebook can't bend ──────────────────────────────────────
@@ -54,8 +54,6 @@ function checkInvariants(state: GameState, config: GameConfig, day: number): voi
     if (hx.upgradeLevel < 0 || hx.upgradeLevel > config.maxUpgrade)
       throw new Error(`day ${day}: ${h3} upgrade out of range`);
   }
-  if (Object.keys(state.contests ?? {}).length)
-    throw new Error(`day ${day}: contests survived the tick`);
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────
@@ -72,10 +70,11 @@ interface BotStats {
 interface BotTally {
   actions: Record<string, number>;
   rejected: number;
-  contestsWon: number;
-  contestsLost: number;
-  defensesHeld: number;
-  parcelsLostToWar: number;
+  buyoutsMade: number;
+  buyoutsSuffered: number;
+  buyoutIncome: number; // $ received from being bought out
+  taxPaid: number;
+  foreclosures: number;
   quakeDamageTaken: number;
   repairsSpent: number;
 }
@@ -110,10 +109,11 @@ async function main() {
     tallies[id] = {
       actions: {},
       rejected: 0,
-      contestsWon: 0,
-      contestsLost: 0,
-      defensesHeld: 0,
-      parcelsLostToWar: 0,
+      buyoutsMade: 0,
+      buyoutsSuffered: 0,
+      buyoutIncome: 0,
+      taxPaid: 0,
+      foreclosures: 0,
       quakeDamageTaken: 0,
       repairsSpent: 0,
     };
@@ -136,26 +136,20 @@ async function main() {
         if (!action) break;
         try {
           const before = state.players[me].crude;
+          const prevOwner = action.type === "buyout" ? state.hexes[action.h3]?.ownerId : null;
           state = applyAction(state, config, me, action);
           tallies[me].actions[action.type] = (tallies[me].actions[action.type] ?? 0) + 1;
           if (action.type === "repair") tallies[me].repairsSpent += before - state.players[me].crude;
+          if (action.type === "buyout" && prevOwner) {
+            tallies[me].buyoutsMade++;
+            if (tallies[prevOwner]) {
+              tallies[prevOwner].buyoutsSuffered++;
+              tallies[prevOwner].buyoutIncome += before - state.players[me].crude;
+            }
+          }
         } catch {
           tallies[me].rejected++;
           break; // the bot believed something false about the rules — stop
-        }
-      }
-    }
-
-    // ── Defense phase: respond to today's declarations ──
-    for (const [h3, c] of Object.entries(state.contests ?? {})) {
-      const idx = ids.indexOf(c.defenderId);
-      if (idx === -1 || c.defenderBid > 0) continue;
-      const bid = Math.round(bots[idx].defendBid({ state, config, me: c.defenderId, world, rng }, h3));
-      if (bid > 0 && state.players[c.defenderId].crude >= bid) {
-        try {
-          state = applyAction(state, config, c.defenderId, { type: "defend", h3, bid });
-        } catch {
-          tallies[c.defenderId].rejected++;
         }
       }
     }
@@ -173,15 +167,9 @@ async function main() {
     state = tick(state, config, events, { weeklyFree: day % 7 === 1 });
     checkInvariants(state, config, day);
 
-    for (const r of state.lastReport?.contests ?? []) {
-      if (r.winnerId === r.attackerId) {
-        tallies[r.attackerId].contestsWon++;
-        tallies[r.defenderId].contestsLost++;
-        tallies[r.defenderId].parcelsLostToWar++;
-      } else {
-        tallies[r.attackerId].contestsLost++;
-        tallies[r.defenderId].defensesHeld++;
-      }
+    for (const id of ids) tallies[id].taxPaid += state.lastReport?.perPlayer[id]?.taxPaid ?? 0;
+    for (const f of state.lastReport?.foreclosures ?? []) {
+      if (tallies[f.ownerId]) tallies[f.ownerId].foreclosures++;
     }
 
     daily.push(
@@ -205,15 +193,16 @@ async function main() {
 
   console.log("FINAL STANDINGS (day " + DAYS + ")");
   console.log(
-    "bot        parcels   cash($)    $/day(28d)  orders  won/lost(war)  held  rejected"
+    "bot        parcels   cash($)   $/day(28d)  orders  bought/sold  sale$   tax$  forecl  rej"
   );
   ids.forEach((id, i) => {
     const t = tallies[id];
     console.log(
       `${bots[i].name.padEnd(10)} ${String(last[i].parcels).padStart(7)} ` +
-        `${String(last[i].cash).padStart(9)} ${String(incomes[i]).padStart(11)} ` +
-        `${String(last[i].orders).padStart(7)} ${String(t.contestsWon).padStart(7)}/${t.contestsLost}` +
-        `${String(t.defensesHeld).padStart(9)} ${String(t.rejected).padStart(9)}`
+        `${String(last[i].cash).padStart(9)} ${String(incomes[i]).padStart(10)} ` +
+        `${String(last[i].orders).padStart(7)} ${String(t.buyoutsMade).padStart(7)}/${t.buyoutsSuffered}` +
+        `${String(Math.round(t.buyoutIncome)).padStart(8)} ${String(Math.round(t.taxPaid)).padStart(7)}` +
+        `${String(t.foreclosures).padStart(7)} ${String(t.rejected).padStart(5)}`
     );
   });
 
@@ -232,18 +221,21 @@ async function main() {
   const totalParcels = last.reduce((a, b) => a + b.parcels, 0);
   const quakeDmg = ids.reduce((a, id) => a + tallies[id].quakeDamageTaken, 0);
   const repairs = ids.reduce((a, id) => a + tallies[id].repairsSpent, 0);
+  const totalTax = ids.reduce((a, id) => a + tallies[id].taxPaid, 0);
+  const totalSales = ids.reduce((a, id) => a + tallies[id].buyoutIncome, 0);
 
   console.log("\nBALANCE SIGNALS");
   console.log(`parcels claimed: ${totalParcels}   cash gini: ${cashGini.toFixed(2)}   parcel gini: ${parcelGini.toFixed(2)}`);
   console.log(`quake damage dealt: ${Math.round(quakeDmg)} pts   repair $ spent: ${Math.round(repairs)}`);
+  console.log(`county tax collected: $${Math.round(totalTax)}   forced-sale volume: $${Math.round(totalSales)}`);
 
   const flags: string[] = [];
   const leader = last.reduce((a, b) => (b.parcels > a.parcels ? b : a));
   if (leader.parcels > totalParcels * 0.5)
     flags.push(`RUNAWAY: ${leader.bot} holds ${leader.parcels}/${totalParcels} parcels — expansion is under-restricted.`);
-  const warlordIdx = bots.findIndex((b) => b.name === "warlord");
-  if (warlordIdx !== -1 && tallies[ids[warlordIdx]].contestsWon === 0 && (tallies[ids[warlordIdx]].actions["contest"] ?? 0) > 3)
-    flags.push(`WAR DEAD LETTER: the warlord declared ${tallies[ids[warlordIdx]].actions["contest"]} contests and won none.`);
+  const flipperIdx = bots.findIndex((b) => b.name === "flipper");
+  if (flipperIdx !== -1 && tallies[ids[flipperIdx]].buyoutsMade > totalParcels * 0.3)
+    flags.push(`SNIPE CITY: the flipper bought ${tallies[ids[flipperIdx]].buyoutsMade} parcels — assessments are systematically underpriced.`);
   if (quakeDmg > 0 && repairs < quakeDmg * 0.5)
     flags.push(`QUAKES SHRUGGED OFF: repair spending ($${Math.round(repairs)}) is small vs damage dealt — maintenance isn't binding.`);
   if (!flags.length) flags.push("none — the table looks honest at these settings");

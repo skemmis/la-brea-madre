@@ -15,7 +15,6 @@ export default function ExchangeMasthead({ active }: { active: "floor" | "portfo
   const nav = [
     { href: "/", label: "THE FLOOR", key: "floor" },
     { href: "/portfolio", label: "PORTFOLIO", key: "portfolio" },
-    { href: "/deck", label: "DECK", key: "deck" },
     { href: "/map", label: "MAP", key: "map" },
   ];
 

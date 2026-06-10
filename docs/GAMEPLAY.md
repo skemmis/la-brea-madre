@@ -34,13 +34,12 @@ strategic tension.
 
 | Action  | Cost | Effect |
 |---|---|---|
-| Claim   | max($100, 30× its ticket $/day) | Land is priced at its value. First ever claim: free, anywhere |
+| Claim   | max($100, 30× its ticket $/day) | Take unowned land at its value. First ever claim: free, anywhere |
+| Buyout  | the owner's asking price | Buy ANY rival parcel at its assessed price — paid to the owner |
 | Upgrade | $200/$400/$800 | Level 1/2/3 — bigger pay multiplier |
 | Repair  | $2 × degradation | Clear quake damage |
-| Contest | escrowed bid ($50 min) | Open a sealed-bid war (below) |
-| Relic   | $600 | Passive yield perk |
 
-Free (no order): **Defend** in a war.
+Free (no order): **Assess** — set your own parcel's price.
 
 ## Quakes — the maintenance tax
 
@@ -51,14 +50,20 @@ order, and the order bank is capped — so the bigger the empire, the longer its
 shaken edges bleed. The map's Seismic layer shows 30 days of shake heat; the
 seismograph bulletin lists fresh events.
 
-## Wars — sealed-bid sieges
+## The Assessment — every parcel is always for sale
 
-Contest an enemy parcel adjacent to your territory: 1 order + an escrowed war
-chest. The defender may secretly counter-commit any amount until midnight
-(commitments stack). At the tick: higher purse takes the parcel (upgrades
-transfer as spoils; exploit stance resets), the defender wins ties, the loser
-recovers half their chest, and an undefended parcel falls to any legal bid.
-Embattled parcels burn brick on the map.
+Each parcel carries its owner's **self-assessed price** (defaulting to its
+market value when claimed). Two rules make the map a market:
+
+1. **Anyone may buy any parcel at its assessed price**, instantly — the money
+   goes to the owner, improvements transfer with the deed.
+2. **The county taxes every assessment 0.5%/day** at the tick. Can't pay, and
+   parcels foreclose to the county, cheapest first.
+
+Price high and you bleed tax; price low and someone takes the deal. Your own
+number is your defense — honesty is the equilibrium, and a big empire pays a
+big bill. There is no separate combat system: conquest IS purchase, at the
+owner's own price.
 
 ## The Parking Oracle — the exchange
 
@@ -70,17 +75,12 @@ is the implied probability; buy and sell any time; each winning share pays $1.
 Trading closes at midnight PT; settlement lands when the city publishes the
 day's records (typically 1–2 days). Same dollars as the map.
 
-## The Deck
-
-$250 packs of three cards with passive exchange effects (payout multipliers,
-loss refunds). Duplicates melt down for $80.
-
 ## The daily tick (midnight PT)
 
 1. Each parcel pays its ticket money.
 2. Carrion in your territory becomes Work Orders (Mondays: +1 free for all).
 3. Unapplied quakes deal their damage.
-4. Wars resolve (sealed bids open).
+4. The county collects its tax on every assessment (foreclosures if unpaid).
 5. The market board closes; tomorrow's slate opens.
 
 ## Testing

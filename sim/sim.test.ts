@@ -29,14 +29,6 @@ test("30 bot-days on the synthetic town hold every invariant", () => {
         }
       }
     }
-    for (const [h3, c] of Object.entries(state.contests ?? {})) {
-      const idx = ids.indexOf(c.defenderId);
-      if (idx === -1 || c.defenderBid > 0) continue;
-      const bid = Math.round(bots[idx].defendBid({ state, config, me: c.defenderId, world, rng }, h3));
-      if (bid > 0 && state.players[c.defenderId].crude >= bid) {
-        state = applyAction(state, config, c.defenderId, { type: "defend", h3, bid });
-      }
-    }
     const owned = Object.keys(state.hexes).filter((h) => state.hexes[h].ownerId);
     state = tick(state, config, sampleEvents(world, owned, day, rng, sampleQuakes(rng)), {
       weeklyFree: day % 7 === 1,
@@ -48,8 +40,8 @@ test("30 bot-days on the synthetic town hold every invariant", () => {
     }
     for (const hx of Object.values(state.hexes)) {
       assert.ok(hx.degradation >= 0 && hx.degradation <= 100, "degradation in range");
+      if (hx.ownerId) assert.ok((hx.price ?? 0) >= 0, "assessments stay sane");
     }
-    assert.deepEqual(state.contests, {}, "no contest survives a tick");
   }
 
   // The town saw real play.

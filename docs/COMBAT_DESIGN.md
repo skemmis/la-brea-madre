@@ -1,6 +1,6 @@
 # Combat v2 — The Encounter (design)
 
-Status: DESIGN — not yet built. The current sealed-bid contest (see
+Status: SUPERSEDED — replaced by the Assessment (Harberger) economy in GAMEPLAY.md. Kept for the record. The current sealed-bid contest (see
 GAMEPLAY.md) is the v1 this replaces. Sim findings motivating it: warlord
 became the apex strategy once land was priced at value (conquest cheaper
 than purchase), and repeated contests drain defenders even when they win

@@ -1,17 +1,24 @@
 /**
  * Bot personas — opposing strategies that stress different rules.
  *
- *   rentier    plays "correctly": prime ticket land, upgrades, prompt repairs
+ *   rentier    plays "correctly": prime land, honest prices, prompt repairs
  *   scavenger  chases carrion to snowball Work Orders
- *   sprawler   expands every order, never maintains (tests empire restriction)
- *   warlord    thin economy, sealed-bid raids (tests combat pricing)
+ *   sprawler   expands every order, lowballs assessments to dodge tax
+ *   flipper    hunts underpriced parcels and buys them out (tests Harberger)
  *   drifter    random legal actions (chaos baseline + crash fuzzing)
  *
  * A bot proposes one action at a time; the runner applies it through the real
  * core (applyAction) so illegal ideas fail exactly as they would in prod.
  */
 import { gridDisk } from "h3-js";
-import { claimPrice, type Action, type GameConfig, type GameState, type PlayerId } from "../shared/core";
+import {
+  assessedPrice,
+  claimPrice,
+  type Action,
+  type GameConfig,
+  type GameState,
+  type PlayerId,
+} from "../shared/core";
 import type { Rng, SimWorld } from "./world";
 
 export interface BotCtx {
@@ -26,8 +33,6 @@ export interface Bot {
   name: string;
   /** The next action to try, or null to stop for the day. */
   nextAction(ctx: BotCtx): Action | null;
-  /** $ to commit when one of the bot's parcels is contested (0 = concede). */
-  defendBid(ctx: BotCtx, h3: string): number;
 }
 
 // ─── Shared senses ────────────────────────────────────────────────────────────
@@ -71,6 +76,38 @@ function bestUnowned(ctx: BotCtx, ranked: string[]): string | null {
 }
 
 const fineOf = (ctx: BotCtx, h: string) => ctx.world.fineRate.get(h) ?? 0;
+
+/** Another player's parcel whose asking price most undershoots its worth. */
+function bestBargain(ctx: BotCtx, discount = 0.7): string | null {
+  let bestH: string | null = null;
+  let bestRatio = discount; // only bother below this fraction of fair value
+  for (const [h3, hx] of Object.entries(ctx.state.hexes)) {
+    if (!hx.ownerId || hx.ownerId === ctx.me) continue;
+    const fair = claimPrice(ctx.config, h3) * (1 + (ctx.config.yield.upgradeBonus[hx.upgradeLevel] ?? 0));
+    if (fair <= ctx.config.assessment.minPrice) continue;
+    const ask = assessedPrice(ctx.state, ctx.config, h3);
+    if (ask > cash(ctx.state, ctx.me)) continue;
+    const ratio = ask / fair;
+    if (ratio < bestRatio) {
+      bestRatio = ratio;
+      bestH = h3;
+    }
+  }
+  return bestH;
+}
+
+/** My most badly underpriced parcel (vs fair value), or null if priced fine. */
+function worstSelfPricing(ctx: BotCtx, owned: string[], target = 1.0): { h3: string; price: number } | null {
+  for (const h of owned) {
+    const fair = Math.max(
+      ctx.config.assessment.minPrice,
+      Math.round(claimPrice(ctx.config, h) * (1 + (ctx.config.yield.upgradeBonus[ctx.state.hexes[h].upgradeLevel] ?? 0)) * target)
+    );
+    const current = assessedPrice(ctx.state, ctx.config, h);
+    if (Math.abs(current - fair) / fair > 0.15) return { h3: h, price: fair };
+  }
+  return null;
+}
 const carrionOf = (ctx: BotCtx, h: string) => ctx.world.carrionRate.get(h) ?? 0;
 
 /** A parcel's rough daily income at its current upgrade/degradation. */
@@ -94,6 +131,9 @@ export function rentier(): Bot {
         const h = bestUnowned(ctx, ctx.world.byFine);
         return h ? { type: "expand", h3: h } : null;
       }
+      // Keep prices honest (a hair above fair, free action).
+      const reprice = worstSelfPricing(ctx, owned, 1.2);
+      if (reprice) return { type: "assess", h3: reprice.h3, price: reprice.price };
       // Repair anything badly shaken first — protect the income.
       const wounded = owned.filter((h) => (ctx.state.hexes[h].degradation ?? 0) >= 20);
       const worst = best(wounded, (h) => incomeOf(ctx, h));
@@ -112,9 +152,6 @@ export function rentier(): Bot {
       const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
       return claim ? { type: "expand", h3: claim } : null;
-    },
-    defendBid(ctx, h3) {
-      return Math.min(cash(ctx.state, ctx.me) * 0.5, Math.max(100, incomeOf(ctx, h3) * 5));
     },
   };
 }
@@ -135,9 +172,6 @@ export function scavenger(): Bot {
       const claim = best(affordable, (h) => carrionOf(ctx, h) * 1000 + fineOf(ctx, h));
       return claim ? { type: "expand", h3: claim } : null;
     },
-    defendBid(ctx, h3) {
-      return Math.min(cash(ctx.state, ctx.me) * 0.4, Math.max(60, incomeOf(ctx, h3) * 4));
-    },
   };
 }
 
@@ -151,51 +185,38 @@ export function sprawler(): Bot {
         const h = bestUnowned(ctx, ctx.world.byFine);
         return h ? { type: "expand", h3: h } : null;
       }
+      // Dodge the tax: lowball every assessment (and learn why that's bad).
+      const lowball = owned.find(
+        (h) => assessedPrice(ctx.state, ctx.config, h) > ctx.config.assessment.minPrice
+      );
+      if (lowball) return { type: "assess", h3: lowball, price: ctx.config.assessment.minPrice };
       const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
       return claim ? { type: "expand", h3: claim } : null;
-    },
-    defendBid() {
-      return 0; // spread thin, concede everything
     },
   };
 }
 
-export function warlord(): Bot {
+export function flipper(): Bot {
   return {
-    name: "warlord",
+    name: "flipper",
     nextAction(ctx) {
       const owned = mine(ctx.state, ctx.me);
       if (orders(ctx.state, ctx.me) < 1) return null;
-      // A small economic base first.
-      if (owned.length < 3) {
-        if (!owned.length) {
-          const h = bestUnowned(ctx, ctx.world.byFine);
-          return h ? { type: "expand", h3: h } : null;
-        }
-        const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
-        const claim = best(f, (h) => fineOf(ctx, h));
-        return claim ? { type: "expand", h3: claim } : null;
+      if (!owned.length) {
+        const h = bestUnowned(ctx, ctx.world.byFine);
+        return h ? { type: "expand", h3: h } : null;
       }
-      // Then take what others built: richest adjacent enemy parcel, war chest
-      // sized to its income.
-      const targets = enemyFrontier(ctx, owned).filter((h) => !ctx.state.contests?.[h]);
-      const target = best(targets, (h) => incomeOf(ctx, h));
-      if (target) {
-        const bid = Math.min(
-          cash(ctx.state, ctx.me) * 0.6,
-          Math.max(ctx.config.combat.minBid, incomeOf(ctx, target) * 4)
-        );
-        if (bid >= ctx.config.combat.minBid && cash(ctx.state, ctx.me) >= bid) {
-          return { type: "contest", h3: target, bid: Math.round(bid) };
-        }
-      }
+      // Mark acquisitions up to a fat ask immediately.
+      const reprice = worstSelfPricing(ctx, owned, 1.5);
+      if (reprice) return { type: "assess", h3: reprice.h3, price: reprice.price };
+      // Hunt mispriced land anywhere on the map.
+      const bargain = bestBargain(ctx, 0.75);
+      if (bargain) return { type: "buyout", h3: bargain };
+      // Nothing cheap on the board: grow normally.
       const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
       return claim ? { type: "expand", h3: claim } : null;
-    },
-    defendBid(ctx, h3) {
-      return Math.min(cash(ctx.state, ctx.me) * 0.6, Math.max(150, incomeOf(ctx, h3) * 6));
     },
   };
 }
@@ -214,25 +235,28 @@ export function drifter(): Bot {
       const roll = ctx.rng();
       const f = frontier(ctx, owned);
       const affordable = f.filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
-      if (roll < 0.5 && affordable.length) {
+      if (roll < 0.4 && affordable.length) {
         return { type: "expand", h3: affordable[Math.floor(ctx.rng() * affordable.length)] };
       }
-      if (roll < 0.7) {
+      if (roll < 0.6) {
         const h = owned[Math.floor(ctx.rng() * owned.length)];
         if (ctx.state.hexes[h].upgradeLevel < ctx.config.maxUpgrade) return { type: "upgrade", h3: h };
       }
-      if (roll < 0.85) {
-        const targets = enemyFrontier(ctx, owned).filter((h) => !ctx.state.contests?.[h]);
-        if (targets.length) {
-          const h = targets[Math.floor(ctx.rng() * targets.length)];
-          const bid = ctx.config.combat.minBid + Math.floor(ctx.rng() * 300);
-          if (cash(ctx.state, ctx.me) >= bid) return { type: "contest", h3: h, bid };
+      if (roll < 0.8) {
+        const h = owned[Math.floor(ctx.rng() * owned.length)];
+        const price = Math.max(ctx.config.assessment.minPrice, Math.round(ctx.rng() * 5000));
+        return { type: "assess", h3: h, price };
+      }
+      const enemies = Object.entries(ctx.state.hexes).filter(
+        ([, hx]) => hx.ownerId && hx.ownerId !== ctx.me
+      );
+      if (enemies.length) {
+        const [h3] = enemies[Math.floor(ctx.rng() * enemies.length)];
+        if (cash(ctx.state, ctx.me) >= assessedPrice(ctx.state, ctx.config, h3)) {
+          return { type: "buyout", h3 };
         }
       }
       return null;
-    },
-    defendBid(ctx) {
-      return ctx.rng() < 0.5 ? 0 : Math.round(ctx.rng() * cash(ctx.state, ctx.me) * 0.3);
     },
   };
 }
@@ -241,6 +265,6 @@ export const PERSONAS: Record<string, () => Bot> = {
   rentier,
   scavenger,
   sprawler,
-  warlord,
+  flipper,
   drifter,
 };

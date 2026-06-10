@@ -327,6 +327,8 @@ export interface HexData {
   citationToday?: number;
   fineDollarsPerDay?: number;
   shakePoints?: number;
+  askingPrice?: number;
+  dailyTax?: number;
   deadAnimalPerMonth?: number;
   ownerName?: string;
   ambient: {

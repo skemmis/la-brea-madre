@@ -5,7 +5,6 @@ import MapPage from "./pages/MapPage";
 import MarketPage from "./pages/MarketPage";
 import MarketDetailPage from "./pages/MarketDetailPage";
 import PortfolioPage from "./pages/PortfolioPage";
-import DeckPage from "./pages/DeckPage";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -31,7 +30,6 @@ export default function App() {
         <Route path="/login" component={LoginPage} />
         <Route path="/admin" component={user ? AdminPage : LoginPage} />
         <Route path="/map" component={MapPage} />
-        <Route path="/deck" component={DeckPage} />
         <Route path="/market/:id" component={MarketDetailPage} />
         <Route path="/portfolio" component={PortfolioPage} />
         <Route component={MarketPage} />
