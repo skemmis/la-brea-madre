@@ -305,6 +305,12 @@ function playerColor(userId: number): [number, number, number] {
   return OWNED_COLORS[userId % OWNED_COLORS.length] as [number, number, number];
 }
 
+// "14h ago", for the seismograph bulletin.
+function ago(iso: string): string {
+  const h = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000));
+  return h < 1 ? "just now" : h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
+
 // Paper grain: a tiny tileable fractal-noise SVG, multiplied over the sheet.
 const GRAIN =
   `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E` +
@@ -362,7 +368,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
 
   // The last 48h of shaking, drawn as heat rings on every layer.
   const { data: quakes = [] } = useQuery<
-    { id: string; mag: number; lat: number; lng: number; radiusKm: number; place: string | null }[]
+    { id: string; mag: number; lat: number; lng: number; radiusKm: number; place: string | null; occurredAt: string }[]
   >({
     queryKey: ["/api/map/quakes"],
     queryFn: () => apiRequest("GET", "/api/map/quakes"),
@@ -509,6 +515,19 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
       new ScatterplotLayer({ id: "quake-outer", ...common, getRadius: (q: any) => q.radiusKm * 1000, getFillColor: [168, 112, 26, 26] }),
       new ScatterplotLayer({ id: "quake-mid", ...common, getRadius: (q: any) => q.radiusKm * 450, getFillColor: [166, 84, 44, 44] }),
       new ScatterplotLayer({ id: "quake-core", ...common, getRadius: (q: any) => q.radiusKm * 120, getFillColor: [166, 60, 44, 90] }),
+      // Pixel-scale epicenter mark, so even a small offshore tremor registers
+      // at sheet zoom: a brick point in a thin survey ring.
+      new ScatterplotLayer({
+        id: "quake-mark-ring", ...common,
+        radiusUnits: "pixels", getRadius: 7,
+        filled: false, stroked: true,
+        getLineColor: [166, 60, 44, 200], lineWidthUnits: "pixels", getLineWidth: 1.2,
+      }),
+      new ScatterplotLayer({
+        id: "quake-mark-dot", ...common,
+        radiusUnits: "pixels", getRadius: 3,
+        getFillColor: [166, 60, 44, 230],
+      }),
     ];
   }, [quakes]);
 
@@ -547,6 +566,22 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
         }}
       />
       <LayerControl active={layerId} onChange={setLayerId} />
+      {/* The seismograph bulletin: recent shakes, click to fly to one. */}
+      {quakes.length > 0 && (
+        <div className="plate absolute bottom-4 right-4 px-3 py-2 select-none max-w-[260px]">
+          <div className="plate-title text-[9px] mb-1 text-[var(--brick)]">THE MADRE STIRRED</div>
+          {quakes.slice(0, 3).map((q) => (
+            <button
+              key={q.id}
+              onClick={() => mapRef.current?.flyTo({ center: [q.lng, q.lat], zoom: 11.5 })}
+              className="block w-full text-left text-[10px] text-[var(--ink)] hover:underline leading-snug py-0.5"
+              style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+            >
+              M{q.mag.toFixed(1)} — {q.place ?? "the basin"} · {ago((q as any).occurredAt)} →
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
