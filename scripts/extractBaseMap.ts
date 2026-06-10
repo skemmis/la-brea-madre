@@ -295,24 +295,96 @@ async function streets(): Promise<void> {
     flush();
   }
 
-  const features: any[] = [];
+  // name → tier → merged chains
+  const byName = new Map<string, Map<number, Pt[][]>>();
   for (const [k, segs] of groups) {
     const bar = k.indexOf("|");
     const tier = Number(k.slice(0, bar));
     const name = k.slice(bar + 1);
-    for (const chain of mergeChains(segs)) {
-      // Unnamed scraps too short to be streets (parking aisles, clipped
-      // ramp remnants) print as stray ticks — drop them.
-      if (!name && lengthMeters(chain) < 45) continue;
-      const simplified = decimate(chain);
-      if (simplified.length < 2) continue;
-      features.push({
-        type: "Feature",
-        // Street name kept for MapLibre's symbol layers (label placement
-        // + collision happen in the engine, so names ride along free).
-        properties: { t: tier, name },
-        geometry: { type: "LineString", coordinates: simplified.map(round5) },
-      });
+    let m = byName.get(name);
+    if (!m) byName.set(name, (m = new Map()));
+    m.set(tier, mergeChains(segs));
+  }
+
+  // OSM flips class mid-street (Exposition Blvd runs secondary with a few
+  // tertiary blocks), which would print as a bold street vanishing for a
+  // stretch. Bridge the flips: a lesser chain whose BOTH ends meet the same
+  // street's higher-class chains is the gap in an otherwise-bold line —
+  // promote it one class so the line continues. Class-change nodes are
+  // always chain endpoints, so endpoint matching finds exactly these.
+  const ekey = (p: Pt) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`;
+  for (const [name, tiers] of byName) {
+    if (!name) continue;
+    for (const g of [2, 1]) {
+      const lower = tiers.get(g);
+      if (!lower?.length) continue;
+      // Match against every vertex of the higher-class chains, not just
+      // their endpoints — on divided stretches the class-change node can sit
+      // mid-chain.
+      const higher = new Set<string>();
+      for (const [t, cs] of tiers) {
+        if (t <= g) continue;
+        for (const c of cs) for (const p of c) higher.add(ekey(p));
+      }
+      if (!higher.size) continue;
+      const keep: Pt[][] = [];
+      const up: Pt[][] = [];
+      for (const c of lower) {
+        (higher.has(ekey(c[0])) && higher.has(ekey(c[c.length - 1])) ? up : keep).push(c);
+      }
+      if (up.length) {
+        tiers.set(g, keep);
+        tiers.set(g + 1, [...(tiers.get(g + 1) ?? []), ...up]);
+      }
+    }
+  }
+
+  // Overall bearing (degrees, 0–180) between a chain's endpoints.
+  const bearing = (c: Pt[]) => {
+    const dx = (c[c.length - 1][0] - c[0][0]) * 92_000;
+    const dy = (c[c.length - 1][1] - c[0][1]) * 111_000;
+    return ((Math.atan2(dy, dx) * 180) / Math.PI + 180) % 180;
+  };
+
+  const features: any[] = [];
+  for (const [name, tiers] of byName) {
+    // The street's main direction: bearing of its longest chain. Median
+    // crossovers on divided boulevards are short chains running across the
+    // street (≈90° off) — they print as bold pills, so drop them. Short
+    // chains ALONG the street are real carriageway pieces and must stay.
+    let mainBearing = -1;
+    if (name) {
+      let best = 0;
+      for (const cs of tiers.values()) {
+        for (const c of cs) {
+          const m = lengthMeters(c);
+          if (m > best) {
+            best = m;
+            mainBearing = bearing(c);
+          }
+        }
+      }
+    }
+    for (const [tier, chains] of tiers) {
+      for (const chain of chains) {
+        const m = lengthMeters(chain);
+        // Unnamed scraps (parking aisles, clipped remnants) print as ticks.
+        if (!name && m < 45) continue;
+        if (name && m < 40 && mainBearing >= 0) {
+          const d = Math.abs(bearing(chain) - mainBearing);
+          const skew = Math.min(d, 180 - d);
+          if (skew > 45) continue; // a crossover, not a carriageway piece
+        }
+        const simplified = decimate(chain);
+        if (simplified.length < 2) continue;
+        features.push({
+          type: "Feature",
+          // Street name kept for MapLibre's symbol layers (label placement
+          // + collision happen in the engine, so names ride along free).
+          properties: { t: tier, name },
+          geometry: { type: "LineString", coordinates: simplified.map(round5) },
+        });
+      }
     }
   }
   write("la-streets.geojson", { type: "FeatureCollection", features });
@@ -325,7 +397,7 @@ async function streets(): Promise<void> {
  * Stops at forks (more than one continuation), so ambiguous junctions keep
  * their pieces separate rather than guessing.
  */
-function mergeChains(segs: Pt[][]): Pt[][] {
+export function mergeChains(segs: Pt[][]): Pt[][] {
   const key = (p: Pt) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`;
   // The sweeping source carries arterials twice (one per swept side). Without
   // deduping, a chain folds onto the duplicate (A→B→A) and decimate then
@@ -360,8 +432,24 @@ function mergeChains(segs: Pt[][]): Pt[][] {
         const cands = (ends.get(tk) ?? []).filter((j) => !used[j]);
         if (cands.length !== 1) break;
         const s = segs[cands[0]];
-        used[cands[0]] = true;
         const piece = key(s[0]) === tk ? s : [...s].reverse(); // piece[0] = tip
+        // Reject U-turns: a divided boulevard's paired carriageways meet at
+        // the median ends, and following one down and the other back makes a
+        // folded U-chain — its parallel return path then collapses under
+        // decimate (vanished stretches), and class-change nodes end up
+        // mid-chain where the gap-bridging pass can't see them. Compare NET
+        // directions (a few points back vs the whole candidate) so gradual,
+        // curved turnarounds are caught too, not just sharp ones.
+        const back = atEnd
+          ? chain[Math.max(0, chain.length - 6)]
+          : chain[Math.min(chain.length - 1, 5)];
+        const va: Pt = [tip[0] - back[0], tip[1] - back[1]];
+        const pend = piece[piece.length - 1];
+        const vb: Pt = [pend[0] - tip[0], pend[1] - tip[1]];
+        const dot = va[0] * vb[0] + va[1] * vb[1];
+        const mag = Math.hypot(...va) * Math.hypot(...vb);
+        if (mag > 0 && dot / mag < -0.5) break;
+        used[cands[0]] = true;
         if (atEnd) chain = chain.concat(piece.slice(1));
         else chain = [...piece].reverse().slice(0, -1).concat(chain);
       }
@@ -372,7 +460,7 @@ function mergeChains(segs: Pt[][]): Pt[][] {
 }
 
 /** Approximate polyline length in meters at LA's latitude. */
-function lengthMeters(line: Pt[]): number {
+export function lengthMeters(line: Pt[]): number {
   let m = 0;
   for (let i = 1; i < line.length; i++) {
     const dx = (line[i][0] - line[i - 1][0]) * 92_000; // meters/deg lon at 34°N
@@ -383,7 +471,7 @@ function lengthMeters(line: Pt[]): number {
 }
 
 /** Drop points that barely deviate from the line between their neighbors. */
-function decimate(line: Pt[], tol = 0.00004): Pt[] {
+export function decimate(line: Pt[], tol = 0.00004): Pt[] {
   if (line.length <= 2) return line;
   const out: Pt[] = [line[0]];
   for (let i = 1; i < line.length - 1; i++) {
@@ -398,7 +486,10 @@ function decimate(line: Pt[], tol = 0.00004): Pt[] {
     const dist = len === 0
       ? Math.hypot(bx - ax, by - ay)
       : Math.abs((bx - ax) * dy - (by - ay) * dx) / len;
-    if (dist > tol) out.push(line[i]);
+    // Never drop a reversal point: if the path doubles back at b, removing
+    // it would flatten the fold into a single chord and erase real geometry.
+    const reverses = (bx - ax) * (cx - bx) + (by - ay) * (cy - by) < 0;
+    if (dist > tol || reverses) out.push(line[i]);
   }
   out.push(line[line.length - 1]);
   return out;

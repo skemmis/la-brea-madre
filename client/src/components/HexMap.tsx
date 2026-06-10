@@ -21,6 +21,10 @@ const PAPER = "#ece4d0";
 const OCEAN = "#dfdbc6"; // the same paper, a shade colder where the water is
 const INK: [number, number, number] = [42, 54, 106]; // Prussian blue
 const INK_HEX = "#2a366a";
+// Place names get their own darker, warmer ink — like the near-black
+// district names on the reference prints — so they read over busy linework
+// instead of dissolving into it.
+const SEPIA_HEX = "#473423";
 
 // Self-hosted Libre Baskerville SDF glyphs — a 1900s ATF Baskerville revival,
 // the right voice for a printed sheet.
@@ -193,10 +197,10 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "symbol-sort-key": ["*", -1, ["get", "area"]] as any,
       },
       paint: {
-        "text-color": INK_HEX,
-        "text-opacity": 0.69,
+        "text-color": SEPIA_HEX,
+        "text-opacity": 0.8,
         "text-halo-color": PAPER,
-        "text-halo-width": 1,
+        "text-halo-width": 1.6,
       },
     },
     {
@@ -213,10 +217,10 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "symbol-sort-key": ["*", -1, ["get", "area"]] as any,
       },
       paint: {
-        "text-color": INK_HEX,
-        "text-opacity": 0.69,
+        "text-color": SEPIA_HEX,
+        "text-opacity": 0.8,
         "text-halo-color": PAPER,
-        "text-halo-width": 1,
+        "text-halo-width": 1.6,
       },
     },
     // Neighboring towns, bold and letterspaced like the reference sheets.
@@ -232,10 +236,10 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "symbol-sort-key": ["*", -1, ["get", "area"]] as any,
       },
       paint: {
-        "text-color": INK_HEX,
-        "text-opacity": 0.84,
+        "text-color": SEPIA_HEX,
+        "text-opacity": 0.95,
         "text-halo-color": PAPER,
-        "text-halo-width": 1,
+        "text-halo-width": 1.9,
       },
     },
     {
