@@ -36,12 +36,19 @@ const COUNTY_CITIES = `${CTH}/los-angeles-county.geojson`;
 const STREETS =
   "https://raw.githubusercontent.com/hackforla/la-street-data/master/Intersect_StreetSweep_OSM_Modified.geojson";
 
+// Overpass: the full drivable grid for the City of LA. The sweeping network
+// above only covers streets with posted sweeping routes — downtown, the hill
+// canyons, and park-adjacent streets are holes in it.
+const OVERPASS = "https://overpass-api.de/api/interpreter";
+
 // Street classes worth printing, mapped to a render weight tier. Footways,
 // cycleways, steps, etc. are dropped — this is the drivable street grid.
+// Ramp `*_link` classes are dropped too: their motorways aren't on the sheet,
+// so they render as orphaned curls at interchanges.
 const STREET_TIERS: Record<string, number> = {
-  trunk: 3, primary: 3, primary_link: 3,
-  secondary: 2, secondary_link: 2,
-  tertiary: 1, tertiary_link: 1,
+  trunk: 3, primary: 3,
+  secondary: 2,
+  tertiary: 1,
   residential: 0, unclassified: 0, living_street: 0,
 };
 
@@ -243,31 +250,136 @@ async function roads(): Promise<void> {
  * viewport, and lightly decimates collinear points to keep the file small.
  */
 async function streets(): Promise<void> {
-  const geo = await fetchJson(STREETS);
-  const features: any[] = [];
-  for (const f of geo.features) {
-    const tier = STREET_TIERS[f.properties?.fclass];
+  // Pull every drivable way inside the City of LA (admin area, wikidata Q65)
+  // straight from Overpass — complete coverage, unlike the sweeping network
+  // (kept above as STREETS for reference) that left downtown and the hills
+  // blank. Same classes as before; ramps still excluded via STREET_TIERS.
+  const query =
+    `[out:json][timeout:600];` +
+    `area["wikidata"="Q65"][admin_level=8]->.la;` +
+    `way["highway"~"^(${Object.keys(STREET_TIERS).join("|")})$"](area.la);` +
+    `out geom;`;
+  console.log(`fetching streets from Overpass (~60k ways, takes a minute) ...`);
+  const res = await fetch(OVERPASS, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      // Overpass policy: requests need an identifying UA, or they 406.
+      "User-Agent": "la-brea-madre-basemap/1.0 (github.com/skemmis/la-brea-madre)",
+    },
+    body: "data=" + encodeURIComponent(query),
+  });
+  if (!res.ok) throw new Error(`Overpass ${res.status}`);
+  const osm = await res.json();
+
+  // The ways come pre-segmented at intersections; collect the clipped runs
+  // grouped by (tier, name) so they can be chained back into whole streets.
+  const groups = new Map<string, Pt[][]>();
+  for (const el of osm.elements ?? []) {
+    if (el.type !== "way" || !el.geometry) continue;
+    const tier = STREET_TIERS[el.tags?.highway];
     if (tier === undefined) continue;
-    const lines: Pt[][] =
-      f.geometry.type === "MultiLineString" ? f.geometry.coordinates : [f.geometry.coordinates];
-    for (const line of lines) {
-      let run: Pt[] = [];
-      const flush = () => {
-        const simplified = decimate(run);
-        if (simplified.length >= 2) {
-          features.push({
-            type: "Feature",
-            properties: { t: tier },
-            geometry: { type: "LineString", coordinates: simplified.map(round5) },
-          });
-        }
-        run = [];
-      };
-      for (const p of line) (inBbox(p) ? run.push(p) : flush());
-      flush();
+    const name: string = el.tags?.name ?? "";
+    const line: Pt[] = el.geometry.map((g: { lat: number; lon: number }) => [g.lon, g.lat]);
+    let run: Pt[] = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const k = `${tier}|${name}`;
+        const g = groups.get(k);
+        if (g) g.push(run);
+        else groups.set(k, [run]);
+      }
+      run = [];
+    };
+    for (const p of line) (inBbox(p) ? run.push(p) : flush());
+    flush();
+  }
+
+  const features: any[] = [];
+  for (const [k, segs] of groups) {
+    const bar = k.indexOf("|");
+    const tier = Number(k.slice(0, bar));
+    const name = k.slice(bar + 1);
+    for (const chain of mergeChains(segs)) {
+      // Unnamed scraps too short to be streets (parking aisles, clipped
+      // ramp remnants) print as stray ticks — drop them.
+      if (!name && lengthMeters(chain) < 45) continue;
+      const simplified = decimate(chain);
+      if (simplified.length < 2) continue;
+      features.push({
+        type: "Feature",
+        // Street name kept for MapLibre's symbol layers (label placement
+        // + collision happen in the engine, so names ride along free).
+        properties: { t: tier, name },
+        geometry: { type: "LineString", coordinates: simplified.map(round5) },
+      });
     }
   }
   write("la-streets.geojson", { type: "FeatureCollection", features });
+}
+
+/**
+ * Chain same-street segments end-to-end into continuous polylines. Long lines
+ * render with clean joins and give the label engine room to set names; the
+ * per-block fragments it replaces produced choppy corners and stub labels.
+ * Stops at forks (more than one continuation), so ambiguous junctions keep
+ * their pieces separate rather than guessing.
+ */
+function mergeChains(segs: Pt[][]): Pt[][] {
+  const key = (p: Pt) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`;
+  // The sweeping source carries arterials twice (one per swept side). Without
+  // deduping, a chain folds onto the duplicate (A→B→A) and decimate then
+  // collapses the degenerate fold to nothing — gaps exactly on arterials.
+  const seen = new Set<string>();
+  segs = segs.filter((s) => {
+    const fwd = s.map(key).join(";");
+    const rev = s.map(key).reverse().join(";");
+    const canon = fwd < rev ? fwd : rev;
+    if (seen.has(canon)) return false;
+    seen.add(canon);
+    return true;
+  });
+  const used = new Array(segs.length).fill(false);
+  const ends = new Map<string, number[]>();
+  segs.forEach((s, i) => {
+    for (const k of [key(s[0]), key(s[s.length - 1])]) {
+      const a = ends.get(k);
+      if (a) a.push(i);
+      else ends.set(k, [i]);
+    }
+  });
+  const out: Pt[][] = [];
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    let chain = [...segs[i]];
+    for (const atEnd of [true, false]) {
+      for (;;) {
+        const tip = atEnd ? chain[chain.length - 1] : chain[0];
+        const tk = key(tip);
+        const cands = (ends.get(tk) ?? []).filter((j) => !used[j]);
+        if (cands.length !== 1) break;
+        const s = segs[cands[0]];
+        used[cands[0]] = true;
+        const piece = key(s[0]) === tk ? s : [...s].reverse(); // piece[0] = tip
+        if (atEnd) chain = chain.concat(piece.slice(1));
+        else chain = [...piece].reverse().slice(0, -1).concat(chain);
+      }
+    }
+    out.push(chain);
+  }
+  return out;
+}
+
+/** Approximate polyline length in meters at LA's latitude. */
+function lengthMeters(line: Pt[]): number {
+  let m = 0;
+  for (let i = 1; i < line.length; i++) {
+    const dx = (line[i][0] - line[i - 1][0]) * 92_000; // meters/deg lon at 34°N
+    const dy = (line[i][1] - line[i - 1][1]) * 111_000;
+    m += Math.hypot(dx, dy);
+  }
+  return m;
 }
 
 /** Drop points that barely deviate from the line between their neighbors. */
@@ -278,11 +390,14 @@ function decimate(line: Pt[], tol = 0.00004): Pt[] {
     const [ax, ay] = out[out.length - 1];
     const [bx, by] = line[i];
     const [cx, cy] = line[i + 1];
-    // Perpendicular distance of b from segment a→c.
+    // Perpendicular distance of b from segment a→c — or plain distance when
+    // a and c coincide (a fold), so doubled-back points are never dropped.
     const dx = cx - ax;
     const dy = cy - ay;
-    const len = Math.hypot(dx, dy) || 1;
-    const dist = Math.abs((bx - ax) * dy - (by - ay) * dx) / len;
+    const len = Math.hypot(dx, dy);
+    const dist = len === 0
+      ? Math.hypot(bx - ax, by - ay)
+      : Math.abs((bx - ax) * dy - (by - ay) * dx) / len;
     if (dist > tol) out.push(line[i]);
   }
   out.push(line[line.length - 1]);
@@ -382,8 +497,124 @@ function centroid(ring: Pt[]): Pt {
   return [x / ring.length, y / ring.length];
 }
 
+/**
+ * Vintage topography: faint contour lines for the hill masses, traced from
+ * open elevation tiles (AWS terrain tiles, terrarium encoding). Contours
+ * start above the basin floor, so the flats stay clean paper and only the
+ * Santa Monicas, Verdugos, San Gabriels, etc. take the ink.
+ */
+const CONTOUR_Z = 9; // tile zoom: coarse on purpose — these are a backdrop
+const CONTOUR_STEP = 120; // meters between lines
+const CONTOUR_MIN = 120; // first line; keeps the basin clean
+
+async function contours(): Promise<void> {
+  const { PNG } = await import("pngjs");
+  const n = 2 ** CONTOUR_Z;
+  const lon2x = (lon: number) => ((lon + 180) / 360) * n;
+  const lat2y = (lat: number) =>
+    ((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n;
+  const tx0 = Math.floor(lon2x(BBOX[0]));
+  const tx1 = Math.floor(lon2x(BBOX[2]));
+  const ty0 = Math.floor(lat2y(BBOX[3]));
+  const ty1 = Math.floor(lat2y(BBOX[1]));
+  const W = (tx1 - tx0 + 1) * 256;
+  const H = (ty1 - ty0 + 1) * 256;
+
+  const grid = new Float32Array(W * H);
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      const url = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${CONTOUR_Z}/${tx}/${ty}.png`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status} ${url}`);
+      const png = PNG.sync.read(Buffer.from(await res.arrayBuffer()));
+      for (let py = 0; py < 256; py++) {
+        for (let px = 0; px < 256; px++) {
+          const i = (py * 256 + px) * 4;
+          const elev =
+            png.data[i] * 256 + png.data[i + 1] + png.data[i + 2] / 256 - 32768;
+          grid[((ty - ty0) * 256 + py) * W + (tx - tx0) * 256 + px] = elev;
+        }
+      }
+    }
+  }
+
+  // A light blur so the lines flow like a drawn sheet, not pixel stairsteps.
+  const blurred = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let sum = 0;
+      let cnt = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const yy = y + dy;
+          const xx = x + dx;
+          if (yy < 0 || yy >= H || xx < 0 || xx >= W) continue;
+          sum += grid[yy * W + xx];
+          cnt++;
+        }
+      }
+      blurred[y * W + x] = sum / cnt;
+    }
+  }
+
+  // Pixel-space → lon/lat, sampling at pixel centers.
+  const px2ll = ([x, y]: Pt): Pt => {
+    const gx = (tx0 * 256 + x + 0.5) / (n * 256);
+    const gy = (ty0 * 256 + y + 0.5) / (n * 256);
+    return [gx * 360 - 180, (Math.atan(Math.sinh(Math.PI * (1 - 2 * gy))) * 180) / Math.PI];
+  };
+
+  let maxElev = 0;
+  for (let i = 0; i < blurred.length; i++) if (blurred[i] > maxElev) maxElev = blurred[i];
+
+  const features: any[] = [];
+  for (let level = CONTOUR_MIN; level <= maxElev; level += CONTOUR_STEP) {
+    // Marching squares: one interpolated segment (or two) per boundary cell.
+    const segs: Pt[][] = [];
+    const at = (x: number, y: number) => blurred[y * W + x];
+    const lerp = (a: number, b: number) => (level - a) / (b - a);
+    for (let y = 0; y < H - 1; y++) {
+      for (let x = 0; x < W - 1; x++) {
+        const tl = at(x, y);
+        const tr = at(x + 1, y);
+        const br = at(x + 1, y + 1);
+        const bl = at(x, y + 1);
+        const idx =
+          (tl >= level ? 8 : 0) | (tr >= level ? 4 : 0) | (br >= level ? 2 : 0) | (bl >= level ? 1 : 0);
+        if (idx === 0 || idx === 15) continue;
+        const top: Pt = [x + lerp(tl, tr), y];
+        const right: Pt = [x + 1, y + lerp(tr, br)];
+        const bottom: Pt = [x + lerp(bl, br), y + 1];
+        const left: Pt = [x, y + lerp(tl, bl)];
+        const cases: Record<number, Pt[][]> = {
+          1: [[left, bottom]], 2: [[bottom, right]], 3: [[left, right]],
+          4: [[top, right]], 5: [[top, left], [bottom, right]], 6: [[top, bottom]],
+          7: [[top, left]], 8: [[top, left]], 9: [[top, bottom]],
+          10: [[top, right], [left, bottom]], 11: [[top, right]],
+          12: [[left, right]], 13: [[bottom, right]], 14: [[left, bottom]],
+        };
+        for (const s of cases[idx]) segs.push(s.map((p) => [p[0], p[1]] as Pt));
+      }
+    }
+    for (const chain of mergeChains(segs)) {
+      const ll = decimate(chain.map(px2ll), 0.0002);
+      // Skip specks — a backdrop wants ridgelines, not noise.
+      if (ll.length < 2 || lengthMeters(ll) < 1200) continue;
+      features.push({
+        type: "Feature",
+        properties: { e: level },
+        geometry: {
+          type: "LineString",
+          coordinates: ll.map((p) => [Math.round(p[0] * 1e4) / 1e4, Math.round(p[1] * 1e4) / 1e4]),
+        },
+      });
+    }
+  }
+  write("socal-contours.geojson", { type: "FeatureCollection", features });
+}
+
 // `ripples` reads the land/coast outputs, so it runs after them.
-const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities };
+const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities, contours };
 const only = process.argv[2] as keyof typeof tasks | undefined;
 (async () => {
   for (const [name, fn] of Object.entries(tasks)) {

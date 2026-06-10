@@ -150,7 +150,7 @@ export async function getAllHexes(): Promise<HexWithDetails[]> {
     lastTickYield: c.lastTickYield,
     citationToday: c.citationToday ?? 0,
     citationPerDay: round1((c.citationToday ?? 0) / citWindow),
-    deadAnimalPerDay: round1((c.deadAnimalCount ?? 0) / daWindow),
+    deadAnimalPerMonth: round1(((c.deadAnimalCount ?? 0) / daWindow) * 30),
     ambient: c.oilWellCount !== null
       ? {
           h3Index: c.h3Index,

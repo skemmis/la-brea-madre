@@ -33,12 +33,9 @@ export const LAYERS: MapLayer[] = [
   {
     id: "deadanimals",
     label: "Carrion",
-    legend: "Dead animal reports",
+    legend: "Dead animals / month",
     ramp: [74, 118, 70], // pine-green ink
-    // Raw cumulative count, not a per-day rate: at res-9 the cells are ~49x
-    // smaller than the old res-7 grid, so a per-day value rounds to zero.
-    // The heat ramp normalizes against the max, so sparse counts still read.
-    metric: (d) => d.ambient?.deadAnimalCount ?? 0,
+    metric: (d) => d.deadAnimalPerMonth ?? 0,
   },
 ];
 

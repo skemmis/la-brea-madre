@@ -264,7 +264,7 @@ export interface MapHex {
   lastTickYield: number;
   citationToday: number;
   citationPerDay: number;
-  deadAnimalPerDay: number;
+  deadAnimalPerMonth: number;
   ownerName?: string;
   neighborhood: string | null;
   ambient: {
@@ -325,7 +325,9 @@ export async function projectMap(): Promise<MapHex[]> {
       lastTickYield: lastYield[c.h3Index] ?? 0,
       citationToday: c.citationToday ?? 0,
       citationPerDay: round1((c.citationToday ?? 0) / citWindow),
-      deadAnimalPerDay: round1((c.deadAnimalCount ?? 0) / daWindow),
+      // Monthly rate: res-9 cells are small enough that a daily rate rounds
+      // to 0.0 for almost every cell.
+      deadAnimalPerMonth: round1(((c.deadAnimalCount ?? 0) / daWindow) * 30),
       ownerName: hx?.ownerId ? names[hx.ownerId] : undefined,
       neighborhood: c.neighborhood,
       ambient:

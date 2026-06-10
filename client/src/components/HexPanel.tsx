@@ -75,8 +75,8 @@ export default function HexPanel({ hex, viewerUserId, hasActionToday, viewerCrud
             <div className="text-[#d97706]">{(hex.citationPerDay ?? 0).toFixed(1)}</div>
           </div>
           <div>
-            <div className="text-[#888] mb-0.5">DEAD ANIMALS /DAY</div>
-            <div className="text-[#d97706]">{(hex.deadAnimalPerDay ?? 0).toFixed(1)}</div>
+            <div className="text-[#888] mb-0.5">DEAD ANIMALS /MO</div>
+            <div className="text-[#d97706]">{(hex.deadAnimalPerMonth ?? 0).toFixed(1)}</div>
           </div>
           <div>
             <div className="text-[#888] mb-0.5">UPGRADE LVL</div>

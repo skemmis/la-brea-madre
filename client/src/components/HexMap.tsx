@@ -1,13 +1,16 @@
 /**
  * The map as a vintage printed sheet: Prussian-blue ink on cream paper,
  * in the style of a 1930s LA street map. There is no tile basemap — the
- * city boundary, the hex survey grid, and (coming) streets/labels are all
- * vector layers we own, drawn straight onto "paper".
+ * base map is a MapLibre style built entirely from GeoJSON sheets we own
+ * (/public/geo) and self-hosted glyphs (/public/fonts), with the game's
+ * hex survey grid drawn over it as a deck.gl overlay.
  */
-import { useMemo, useState, useCallback } from "react";
-import DeckGL from "@deck.gl/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { MapboxOverlay } from "@deck.gl/mapbox";
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
-import { GeoJsonLayer, TextLayer } from "@deck.gl/layers";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../lib/queryClient";
 import LayerControl from "./LayerControl";
@@ -17,29 +20,244 @@ import { getLayer, metricColor, type LayerId } from "../lib/mapLayers";
 const PAPER = "#ece4d0";
 const OCEAN = "#dfdbc6"; // the same paper, a shade colder where the water is
 const INK: [number, number, number] = [42, 54, 106]; // Prussian blue
-const SERIF = "Georgia, 'Times New Roman', serif";
+const INK_HEX = "#2a366a";
 
-// Letterspaced caps, like the old sheets: "BURBANK" → "B U R B A N K".
-const spaced = (s: string) => s.split("").join(" ");
+// Self-hosted Libre Baskerville SDF glyphs — a 1900s ATF Baskerville revival,
+// the right voice for a printed sheet.
+const SERIF = ["libre_baskerville_regular"];
+const SERIF_BOLD = ["libre_baskerville_bold"];
 
-/** A static GeoJSON sheet layer from /public/geo — fetched once, cached forever. */
-function useGeo(name: string) {
-  return useQuery<any>({
-    queryKey: ["geo", name],
-    queryFn: () => fetch(`/geo/${name}.geojson`).then((r) => r.json()),
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
-}
+// Street ink, weighted by class `t` (0 local … 3 arterial).
+const classed = (vals: [number, number, number, number]) =>
+  ["match", ["get", "t"], 0, vals[0], 1, vals[1], 2, vals[2], 3, vals[3], vals[0]] as any;
+
+/**
+ * The whole base map as one MapLibre style: paper, water engraving, street
+ * grid, and typographic layers. Symbol layers give us real street names with
+ * proper line placement and collision handling — things the hand-rolled
+ * deck.gl sheet could never do.
+ */
+const SHEET_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  glyphs: "/fonts/{fontstack}/{range}.pbf",
+  sources: {
+    land: { type: "geojson", data: "/geo/socal-land.geojson" },
+    ripples: { type: "geojson", data: "/geo/socal-ripples.geojson" },
+    coastline: { type: "geojson", data: "/geo/socal-coastline.geojson" },
+    streets: { type: "geojson", data: "/geo/la-streets.geojson" },
+    roads: { type: "geojson", data: "/geo/la-roads.geojson" },
+    boundary: { type: "geojson", data: "/geo/la-city-boundary.geojson" },
+    hoods: { type: "geojson", data: "/geo/la-neighborhood-labels.geojson" },
+    cities: { type: "geojson", data: "/geo/la-city-labels.geojson" },
+    ocean: {
+      type: "geojson",
+      data: {
+        type: "Feature",
+        properties: { name: "PACIFIC  OCEAN" },
+        geometry: { type: "Point", coordinates: [-118.72, 33.82] },
+      },
+    },
+  },
+  layers: [
+    { id: "background", type: "background", paint: { "background-color": OCEAN } },
+    {
+      id: "land",
+      type: "fill",
+      source: "land",
+      paint: { "fill-color": PAPER },
+    },
+    // Engraved water lines: three echoes of the coast, fading seaward.
+    {
+      id: "shore-ripples",
+      type: "line",
+      source: "ripples",
+      paint: {
+        "line-color": INK_HEX,
+        "line-width": 0.6,
+        "line-opacity": ["match", ["get", "k"], 1, 0.2, 2, 0.14, 3, 0.085, 0.14] as any,
+      },
+    },
+    {
+      id: "coastline",
+      type: "line",
+      source: "coastline",
+      paint: { "line-color": INK_HEX, "line-width": 1.2, "line-opacity": 0.5 },
+    },
+    // The street grid, printed like the reference sheets: arterials (t≥2)
+    // are the bold named skeleton of the city; the local grid is whisper-
+    // faint unlabeled texture between them.
+    {
+      id: "streets",
+      type: "line",
+      source: "streets",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": INK_HEX,
+        "line-width": [
+          "interpolate", ["exponential", 1.6], ["zoom"],
+          9, classed([0.2, 0.25, 0.6, 0.9]),
+          12, classed([0.35, 0.45, 1.1, 1.5]),
+          14, classed([0.7, 0.9, 2.2, 3.0]),
+        ] as any,
+        "line-opacity": [
+          "interpolate", ["linear"], ["zoom"],
+          9, classed([0.07, 0.09, 0.42, 0.55]),
+          11.5, classed([0.18, 0.22, 0.55, 0.68]),
+        ] as any,
+      },
+    },
+    // Freeways: the heaviest linework on the sheet besides the city limit.
+    {
+      id: "roads",
+      type: "line",
+      source: "roads",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": INK_HEX,
+        "line-width": ["match", ["get", "type"], "Major Highway", 1.6, 0.9] as any,
+        "line-opacity": 0.59,
+      },
+    },
+    // The city limit, inked above the grid.
+    {
+      id: "city-boundary",
+      type: "line",
+      source: "boundary",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": INK_HEX, "line-width": 2, "line-opacity": 0.92 },
+    },
+    // ── Typography ──────────────────────────────────────────────────────────
+    // Only arterials carry names, like the reference sheets — the local grid
+    // is texture, not information.
+    {
+      id: "street-labels-major",
+      type: "symbol",
+      source: "streets",
+      minzoom: 10.5,
+      filter: [">=", ["get", "t"], 2] as any,
+      layout: {
+        "symbol-placement": "line",
+        "text-field": ["get", "name"] as any,
+        "text-font": SERIF,
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10.5, 9.5, 14, 14.5] as any,
+        "text-letter-spacing": 0.06,
+        // Like the reference sheets: the name rides just above the street's
+        // ink line rather than running over it.
+        "text-offset": [0, -0.65] as any,
+        "symbol-spacing": 420,
+        "text-padding": 4,
+      },
+      paint: {
+        // Full ink and a slim halo: a fat halo eats the serif hairlines and
+        // is most of what reads as "muddy" at close zoom.
+        "text-color": INK_HEX,
+        "text-opacity": 0.9,
+        "text-halo-color": PAPER,
+        "text-halo-width": 0.9,
+      },
+    },
+    // Highway numbers along the freeways.
+    {
+      id: "road-labels",
+      type: "symbol",
+      source: "roads",
+      minzoom: 9.2,
+      layout: {
+        "symbol-placement": "line",
+        "text-field": ["get", "name"] as any,
+        "text-font": SERIF_BOLD,
+        "text-size": 10,
+        "text-letter-spacing": 0.15,
+        "symbol-spacing": 500,
+      },
+      paint: {
+        "text-color": INK_HEX,
+        "text-opacity": 0.7,
+        "text-halo-color": PAPER,
+        "text-halo-width": 1.2,
+      },
+    },
+    // Neighborhood names: the biggest districts always; the rest as you zoom
+    // in. Collision handling keeps the sheet from clotting; the sort key
+    // makes the larger district win when two names fight for the same spot.
+    {
+      id: "hood-labels-major",
+      type: "symbol",
+      source: "hoods",
+      filter: [">", ["get", "area"], 0.0006] as any,
+      layout: {
+        "text-field": ["get", "name"] as any,
+        "text-font": SERIF,
+        "text-size": 12,
+        "text-letter-spacing": 0.08,
+        "symbol-sort-key": ["*", -1, ["get", "area"]] as any,
+      },
+      paint: {
+        "text-color": INK_HEX,
+        "text-opacity": 0.69,
+        "text-halo-color": PAPER,
+        "text-halo-width": 1,
+      },
+    },
+    {
+      id: "hood-labels-minor",
+      type: "symbol",
+      source: "hoods",
+      minzoom: 10.5,
+      filter: ["<=", ["get", "area"], 0.0006] as any,
+      layout: {
+        "text-field": ["get", "name"] as any,
+        "text-font": SERIF,
+        "text-size": 10,
+        "text-letter-spacing": 0.08,
+        "symbol-sort-key": ["*", -1, ["get", "area"]] as any,
+      },
+      paint: {
+        "text-color": INK_HEX,
+        "text-opacity": 0.69,
+        "text-halo-color": PAPER,
+        "text-halo-width": 1,
+      },
+    },
+    // Neighboring towns, bold and letterspaced like the reference sheets.
+    {
+      id: "city-labels",
+      type: "symbol",
+      source: "cities",
+      layout: {
+        "text-field": ["get", "name"] as any,
+        "text-font": SERIF_BOLD,
+        "text-size": 13,
+        "text-letter-spacing": 0.35,
+        "symbol-sort-key": ["*", -1, ["get", "area"]] as any,
+      },
+      paint: {
+        "text-color": INK_HEX,
+        "text-opacity": 0.84,
+        "text-halo-color": PAPER,
+        "text-halo-width": 1,
+      },
+    },
+    {
+      id: "ocean-label",
+      type: "symbol",
+      source: "ocean",
+      layout: {
+        "text-field": ["get", "name"] as any,
+        "text-font": SERIF,
+        "text-size": 24,
+        "text-letter-spacing": 0.5,
+        "text-rotate": -38, // running with the shoreline of the bay
+        "text-allow-overlap": true,
+      },
+      paint: { "text-color": INK_HEX, "text-opacity": 0.43 },
+    },
+  ],
+};
 
 // Initial view: the city centroid (Census INTPT), flat like a print.
-const INITIAL_VIEW_STATE = {
-  longitude: -118.4108,
-  latitude: 34.0194,
-  zoom: 9.5,
-  pitch: 0,
-  bearing: 0,
-};
+const INITIAL_CENTER: [number, number] = [-118.4108, 34.0194];
+const INITIAL_ZOOM = 9.5;
 
 // Owned parcels read as muted print tints stamped onto the sheet.
 const OWNED_COLORS = [
@@ -73,7 +291,7 @@ export interface HexData {
   lastTickYield: number;
   citationToday?: number;
   citationPerDay?: number;
-  deadAnimalPerDay?: number;
+  deadAnimalPerMonth?: number;
   ownerName?: string;
   ambient: {
     oilWellCount: number;
@@ -91,7 +309,16 @@ interface Props {
 }
 
 export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props) {
-  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const overlayRef = useRef<MapboxOverlay | null>(null);
+  // Latest select handler/selection, readable from the long-lived overlay.
+  const selectRef = useRef({ onSelectHex, selectedHex });
+  selectRef.current = { onSelectHex, selectedHex };
+
+  // Paper grain reads as age at sheet scale but as noise over the type up
+  // close — fade it back as the reader leans in.
+  const [grainOpacity, setGrainOpacity] = useState(0.55);
 
   const { data: hexes = [] } = useQuery<HexData[]>({
     queryKey: ["/api/map/hexes"],
@@ -100,168 +327,17 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     staleTime: 30_000,
   });
 
-  // The static sheet: land, coast, freeways, the boundary, and label points.
-  const { data: boundary } = useGeo("la-city-boundary");
-  const { data: land } = useGeo("socal-land");
-  const { data: coastline } = useGeo("socal-coastline");
-  const { data: rippleGeo } = useGeo("socal-ripples");
-  const { data: streets } = useGeo("la-streets");
-  const { data: roads } = useGeo("la-roads");
-  const { data: hoods } = useGeo("la-neighborhood-labels");
-  const { data: cities } = useGeo("la-city-labels");
-
   const [layerId, setLayerId] = useState<LayerId>("ownership");
   const layer = getLayer(layerId);
 
-  // Land is paper; whatever it doesn't cover is the (slightly colder) ocean.
-  // Unstroked — its edges are bbox clip cuts; the real coast ink is below.
-  const landLayer = useMemo(() => {
-    if (!land) return null;
-    return new GeoJsonLayer({
-      id: "land",
-      data: land,
-      stroked: false,
-      filled: true,
-      getFillColor: [236, 228, 208, 255],
-      pickable: false,
-    });
-  }, [land]);
-
-  // Engraved water lines: three echoes of the coast, fading seaward.
-  const rippleLayer = useMemo(() => {
-    if (!rippleGeo) return null;
-    return new GeoJsonLayer({
-      id: "shore-ripples",
-      data: rippleGeo,
-      stroked: true,
-      filled: false,
-      getLineColor: (f: any) =>
-        [...INK, [0, 52, 36, 22][f.properties?.k ?? 1]] as [number, number, number, number],
-      lineWidthUnits: "pixels",
-      getLineWidth: 0.6,
-      pickable: false,
-    });
-  }, [rippleGeo]);
-
-  const coastLayer = useMemo(() => {
-    if (!coastline) return null;
-    return new GeoJsonLayer({
-      id: "coastline",
-      data: coastline,
-      stroked: true,
-      filled: false,
-      getLineColor: [...INK, 130] as [number, number, number, number],
-      lineWidthUnits: "pixels",
-      getLineWidth: 1.2,
-      pickable: false,
-    });
-  }, [coastline]);
-
-  // The surface-street grid: fine ink, weighted by class. Lighter when zoomed
-  // out so the city doesn't smear into a solid block of blue.
-  const streetsLayer = useMemo(() => {
-    if (!streets) return null;
-    const far = viewState.zoom < 11;
-    return new GeoJsonLayer({
-      id: "streets",
-      data: streets,
-      stroked: true,
-      filled: false,
-      getLineColor: (f: any) =>
-        [...INK, [70, 95, 120, 150][f.properties?.t ?? 0]] as [number, number, number, number],
-      lineWidthUnits: "pixels",
-      getLineWidth: (f: any) => [0.4, 0.5, 0.7, 0.9][f.properties?.t ?? 0],
-      lineWidthMinPixels: far ? 0.3 : 0.4,
-      pickable: false,
-      updateTriggers: { getLineWidth: [], lineWidthMinPixels: [far] },
-    });
-  }, [streets, viewState.zoom < 11]);
-
-  // Freeways: the heaviest linework on the sheet besides the city limit.
-  const roadsLayer = useMemo(() => {
-    if (!roads) return null;
-    return new GeoJsonLayer({
-      id: "roads",
-      data: roads,
-      stroked: true,
-      filled: false,
-      getLineColor: [...INK, 150] as [number, number, number, number],
-      lineWidthUnits: "pixels",
-      getLineWidth: (f: any) => (f.properties?.type === "Major Highway" ? 1.6 : 0.9),
-      pickable: false,
-    });
-  }, [roads]);
-
-  // The city limit, inked above the grid.
-  const boundaryLayer = useMemo(() => {
-    if (!boundary) return null;
-    return new GeoJsonLayer({
-      id: "city-boundary",
-      data: boundary,
-      stroked: true,
-      filled: false,
-      getLineColor: [...INK, 235] as [number, number, number, number],
-      lineWidthUnits: "pixels",
-      getLineWidth: 2,
-      lineWidthMinPixels: 1.5,
-      pickable: false,
-    });
-  }, [boundary]);
-
-  // Neighborhood names: the biggest districts always; the rest as you zoom in.
-  const hoodLabelLayer = useMemo(() => {
-    if (!hoods) return null;
-    const sorted = [...hoods.features].sort((a, b) => b.properties.area - a.properties.area);
-    const visible = viewState.zoom >= 10.5 ? sorted : sorted.slice(0, 45);
-    return new TextLayer({
-      id: "hood-labels",
-      data: visible,
-      getPosition: (f: any) => f.geometry.coordinates,
-      getText: (f: any) => f.properties.name,
-      getSize: (f: any) => (f.properties.area > 0.0006 ? 12 : 10),
-      getColor: [...INK, 175] as [number, number, number, number],
-      fontFamily: SERIF,
-      characterSet: "auto",
-      sizeUnits: "pixels",
-      pickable: false,
-    });
-  }, [hoods, viewState.zoom]);
-
-  // Neighboring towns, bold and letterspaced like the reference sheets.
-  const cityLabelLayer = useMemo(() => {
-    if (!cities) return null;
-    return new TextLayer({
-      id: "city-labels",
-      data: cities.features,
-      getPosition: (f: any) => f.geometry.coordinates,
-      getText: (f: any) => spaced(f.properties.name),
-      getSize: 13,
-      getColor: [...INK, 215] as [number, number, number, number],
-      fontFamily: SERIF,
-      fontWeight: "bold",
-      characterSet: "auto",
-      sizeUnits: "pixels",
-      pickable: false,
-    });
-  }, [cities]);
-
-  const oceanLabelLayer = useMemo(
-    () =>
-      new TextLayer({
-        id: "ocean-label",
-        data: [{ position: [-118.72, 33.82], text: spaced("PACIFIC  OCEAN") }],
-        getPosition: (d: any) => d.position,
-        getText: (d: any) => d.text,
-        getSize: 24,
-        getAngle: -38, // running with the shoreline of the bay
-        getColor: [...INK, 110] as [number, number, number, number],
-        fontFamily: SERIF,
-        characterSet: "auto",
-        sizeUnits: "pixels",
-        pickable: false,
-      }),
-    []
-  );
+  // Yesterday's dead-animal pickups, plotted as glowing dots on the carrion
+  // layer — the exact report locations, not the hex aggregate. (Experimental.)
+  const { data: carrion } = useQuery<{ date: string; points: { lng: number; lat: number }[] }>({
+    queryKey: ["/api/map/carrion-points"],
+    queryFn: () => apiRequest("GET", "/api/map/carrion-points"),
+    enabled: layerId === "deadanimals",
+    staleTime: 15 * 60_000,
+  });
 
   // Max value of the active metric, for normalizing the heat ramp.
   const maxMetric = useMemo(() => {
@@ -269,8 +345,47 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     return Math.max(1, ...hexes.map(layer.metric));
   }, [hexes, layer]);
 
-  // The hex grid, drawn like a printed survey/lease grid: flat, thin ink
-  // strokes, tint fills only where the game has something to say.
+  // The base map. Built once; the game overlay rides on top of it.
+  useEffect(() => {
+    const map = new maplibregl.Map({
+      container: containerRef.current!,
+      style: SHEET_STYLE,
+      center: INITIAL_CENTER,
+      zoom: INITIAL_ZOOM,
+      // Stay on the sheet: clamp zoom so the view never outruns the extracted
+      // base-map bbox or dives below useful detail.
+      minZoom: 8.8,
+      maxZoom: 14,
+      // Flat like a print: no rotation, no pitch.
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      attributionControl: false,
+    });
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
+    const onZoom = () =>
+      setGrainOpacity(Math.min(0.55, Math.max(0.22, 0.55 - (map.getZoom() - 9.5) * 0.075)));
+    map.on("zoom", onZoom);
+    onZoom();
+
+    const overlay = new MapboxOverlay({ interleaved: false, layers: [] });
+    map.addControl(overlay);
+
+    mapRef.current = map;
+    overlayRef.current = overlay;
+    if (import.meta.env.DEV) (window as any).__map = map;
+
+    return () => {
+      overlayRef.current = null;
+      mapRef.current = null;
+      map.remove();
+    };
+  }, []);
+
+  // The hex grid, drawn like a printed survey/lease grid: flat ink, tint
+  // fills only where the game has something to say. Unowned cells carry no
+  // stroke at all, so the survey grid never competes with the street ink.
   const hexLayer = useMemo(
     () =>
       new H3HexagonLayer<HexData>({
@@ -298,8 +413,9 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
         },
         getLineColor: (d) => {
           if (d.h3Index === selectedHex?.h3Index) return [...INK, 255] as [number, number, number, number];
+          if (!d.ownerId) return [0, 0, 0, 0] as [number, number, number, number];
           // On metric layers, keep ownership legible via the border tint.
-          if (layerId !== "ownership" && d.ownerId) {
+          if (layerId !== "ownership") {
             const [r, g, b] = playerColor(d.ownerId);
             return [r, g, b, 200] as [number, number, number, number];
           }
@@ -309,42 +425,48 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
         autoHighlight: true,
         highlightColor: [...INK, 36],
         onClick: ({ object }) => {
-          onSelectHex(object === selectedHex ? null : object ?? null);
+          const { onSelectHex: select, selectedHex: sel } = selectRef.current;
+          select(object === sel ? null : object ?? null);
         },
         updateTriggers: {
           getFillColor: [layerId, viewerUserId, maxMetric, selectedHex],
           getLineColor: [layerId, selectedHex],
         },
       }),
-    [hexes, layerId, layer, maxMetric, viewerUserId, selectedHex, onSelectHex]
+    [hexes, layerId, layer, maxMetric, viewerUserId, selectedHex]
   );
 
-  const onViewStateChange = useCallback(({ viewState: vs }: any) => {
-    // Stay on the sheet: clamp zoom so the view never outruns the extracted
-    // base-map bbox or dives below useful detail.
-    setViewState({ ...vs, zoom: Math.min(14, Math.max(8.8, vs.zoom)) });
-  }, []);
+  // Glow = three concentric scatter dots: a soft halo, a brighter middle,
+  // and a near-white hot core. Pixel radii so it reads at every zoom.
+  const carrionGlowLayers = useMemo(() => {
+    if (layerId !== "deadanimals" || !carrion?.points?.length) return [];
+    const common = {
+      data: carrion.points,
+      getPosition: (d: { lng: number; lat: number }) => [d.lng, d.lat] as [number, number],
+      radiusUnits: "pixels" as const,
+      stroked: false,
+      pickable: false,
+    };
+    return [
+      new ScatterplotLayer({ id: "carrion-glow-halo", ...common, getRadius: 12, getFillColor: [110, 175, 95, 55] }),
+      new ScatterplotLayer({ id: "carrion-glow-mid", ...common, getRadius: 6, getFillColor: [130, 205, 110, 140] }),
+      new ScatterplotLayer({ id: "carrion-glow-core", ...common, getRadius: 2.4, getFillColor: [240, 255, 225, 255] }),
+    ];
+  }, [carrion, layerId]);
+
+  useEffect(() => {
+    overlayRef.current?.setProps({
+      layers: [hexLayer, ...carrionGlowLayers],
+      onHover: ({ object }) => {
+        const canvas = mapRef.current?.getCanvas();
+        if (canvas) canvas.style.cursor = object ? "pointer" : "";
+      },
+    });
+  }, [hexLayer, carrionGlowLayers]);
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative", background: OCEAN }}>
-      <DeckGL
-        viewState={viewState}
-        onViewStateChange={onViewStateChange}
-        controller={true}
-        layers={[
-          landLayer,
-          rippleLayer,
-          coastLayer,
-          streetsLayer,
-          roadsLayer,
-          hexLayer,
-          boundaryLayer,
-          hoodLabelLayer,
-          cityLabelLayer,
-          oceanLabelLayer,
-        ]}
-        getCursor={({ isHovering }) => (isHovering ? "pointer" : "grab")}
-      />
+      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
       {/* Paper finish: grain + vignette, multiplied over ink and all. */}
       <div
         style={{
@@ -352,7 +474,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
           inset: 0,
           pointerEvents: "none",
           backgroundImage: GRAIN,
-          opacity: 0.55,
+          opacity: grainOpacity,
           mixBlendMode: "multiply",
         }}
       />
