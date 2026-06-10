@@ -100,7 +100,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         ] as any,
         "line-opacity": [
           "interpolate", ["linear"], ["zoom"],
-          9, classed([0.16, 0.22, 0.3, 0.38]),
+          9, classed([0.11, 0.16, 0.28, 0.38]),
           11.5, classed([0.27, 0.37, 0.47, 0.59]),
         ] as any,
       },

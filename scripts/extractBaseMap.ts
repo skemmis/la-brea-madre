@@ -36,6 +36,11 @@ const COUNTY_CITIES = `${CTH}/los-angeles-county.geojson`;
 const STREETS =
   "https://raw.githubusercontent.com/hackforla/la-street-data/master/Intersect_StreetSweep_OSM_Modified.geojson";
 
+// Overpass: the full drivable grid for the City of LA. The sweeping network
+// above only covers streets with posted sweeping routes — downtown, the hill
+// canyons, and park-adjacent streets are holes in it.
+const OVERPASS = "https://overpass-api.de/api/interpreter";
+
 // Street classes worth printing, mapped to a render weight tier. Footways,
 // cycleways, steps, etc. are dropped — this is the drivable street grid.
 // Ramp `*_link` classes are dropped too: their motorways aren't on the sheet,
@@ -245,30 +250,49 @@ async function roads(): Promise<void> {
  * viewport, and lightly decimates collinear points to keep the file small.
  */
 async function streets(): Promise<void> {
-  const geo = await fetchJson(STREETS);
-  // The source maps one feature per block face; collect the clipped runs
+  // Pull every drivable way inside the City of LA (admin area, wikidata Q65)
+  // straight from Overpass — complete coverage, unlike the sweeping network
+  // (kept above as STREETS for reference) that left downtown and the hills
+  // blank. Same classes as before; ramps still excluded via STREET_TIERS.
+  const query =
+    `[out:json][timeout:600];` +
+    `area["wikidata"="Q65"][admin_level=8]->.la;` +
+    `way["highway"~"^(${Object.keys(STREET_TIERS).join("|")})$"](area.la);` +
+    `out geom;`;
+  console.log(`fetching streets from Overpass (~60k ways, takes a minute) ...`);
+  const res = await fetch(OVERPASS, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      // Overpass policy: requests need an identifying UA, or they 406.
+      "User-Agent": "la-brea-madre-basemap/1.0 (github.com/skemmis/la-brea-madre)",
+    },
+    body: "data=" + encodeURIComponent(query),
+  });
+  if (!res.ok) throw new Error(`Overpass ${res.status}`);
+  const osm = await res.json();
+
+  // The ways come pre-segmented at intersections; collect the clipped runs
   // grouped by (tier, name) so they can be chained back into whole streets.
   const groups = new Map<string, Pt[][]>();
-  for (const f of geo.features) {
-    const tier = STREET_TIERS[f.properties?.fclass];
+  for (const el of osm.elements ?? []) {
+    if (el.type !== "way" || !el.geometry) continue;
+    const tier = STREET_TIERS[el.tags?.highway];
     if (tier === undefined) continue;
-    const name: string = f.properties?.name ?? "";
-    const lines: Pt[][] =
-      f.geometry.type === "MultiLineString" ? f.geometry.coordinates : [f.geometry.coordinates];
-    for (const line of lines) {
-      let run: Pt[] = [];
-      const flush = () => {
-        if (run.length >= 2) {
-          const k = `${tier}|${name}`;
-          const g = groups.get(k);
-          if (g) g.push(run);
-          else groups.set(k, [run]);
-        }
-        run = [];
-      };
-      for (const p of line) (inBbox(p) ? run.push(p.slice() as Pt) : flush());
-      flush();
-    }
+    const name: string = el.tags?.name ?? "";
+    const line: Pt[] = el.geometry.map((g: { lat: number; lon: number }) => [g.lon, g.lat]);
+    let run: Pt[] = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const k = `${tier}|${name}`;
+        const g = groups.get(k);
+        if (g) g.push(run);
+        else groups.set(k, [run]);
+      }
+      run = [];
+    };
+    for (const p of line) (inBbox(p) ? run.push(p) : flush());
+    flush();
   }
 
   const features: any[] = [];
