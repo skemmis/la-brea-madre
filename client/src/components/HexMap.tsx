@@ -417,6 +417,23 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     });
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
+
+    // A deploy (or flaky network) can sever a GeoJSON fetch mid-flight, and
+    // MapLibre won't retry — the layer would stay blank until a reload.
+    // Re-request failed sources a few times with backoff instead.
+    const sourceRetries: Record<string, number> = {};
+    map.on("error", (e: any) => {
+      const id: string | undefined = e?.sourceId;
+      if (!id) return;
+      const n = sourceRetries[id] ?? 0;
+      if (n >= 3) return;
+      sourceRetries[id] = n + 1;
+      setTimeout(() => {
+        const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+        const data = (SHEET_STYLE.sources as any)[id]?.data;
+        if (src && typeof data === "string") src.setData(data);
+      }, 2000 * (n + 1));
+    });
     const onZoom = () =>
       setGrainOpacity(Math.min(0.55, Math.max(0.22, 0.55 - (map.getZoom() - 9.5) * 0.075)));
     map.on("zoom", onZoom);
