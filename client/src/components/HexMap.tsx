@@ -141,6 +141,9 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "text-font": SERIF,
         "text-size": ["interpolate", ["linear"], ["zoom"], 10.5, 9.5, 14, 13] as any,
         "text-letter-spacing": 0.06,
+        // Like the reference sheets: the name rides just above the street's
+        // ink line rather than running over it.
+        "text-offset": [0, -0.65] as any,
         "symbol-spacing": 420,
         "text-padding": 4,
       },
