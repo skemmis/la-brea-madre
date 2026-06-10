@@ -57,6 +57,77 @@ function bbox(): [number, number, number, number] {
   return bboxCache;
 }
 
+// ─── Land test ────────────────────────────────────────────────────────────────
+// The legal boundary runs out into Santa Monica Bay; the LA Times
+// neighborhood polygons stop at the shoreline. "In the boundary AND in a
+// neighborhood" is the playable-land test the hex grid uses.
+
+const LAND_CANDIDATES = [
+  "client/public/geo/la-city-land.geojson",
+  "dist/public/geo/la-city-land.geojson",
+];
+
+interface LandPoly {
+  rings: Ring[];
+  bbox: [number, number, number, number];
+}
+
+let landCache: LandPoly[] | null | undefined;
+
+function landPolys(): LandPoly[] | null {
+  if (landCache !== undefined) return landCache ?? null;
+  landCache = null;
+  for (const rel of LAND_CANDIDATES) {
+    const p = path.resolve(process.cwd(), rel);
+    if (!fs.existsSync(p)) continue;
+    const geo = JSON.parse(fs.readFileSync(p, "utf8"));
+    landCache = geo.features.map((f: any) => {
+      const rings = f.geometry.coordinates as Ring[];
+      let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
+      for (const [lng, lat] of rings[0]) {
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+      return { rings, bbox: [minLng, minLat, maxLng, maxLat] };
+    });
+    break;
+  }
+  return landCache ?? null;
+}
+
+function inRings(lat: number, lng: number, rs: Ring[]): boolean {
+  let inside = false;
+  for (const ring of rs) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
+/** On the city's land (in some neighborhood). True when the land file is absent. */
+export function pointOnCityLand(lat: number, lng: number): boolean {
+  const polys = landPolys();
+  if (!polys) return true; // fail open: no land data, fall back to boundary-only
+  for (const p of polys) {
+    const [minLng, minLat, maxLng, maxLat] = p.bbox;
+    if (lng < minLng || lng > maxLng || lat < minLat || lat > maxLat) continue;
+    if (inRings(lat, lng, p.rings)) return true;
+  }
+  return false;
+}
+
+/** The full playable test: inside the legal boundary AND on city land. */
+export function pointPlayable(lat: number, lng: number): boolean {
+  return pointInCity(lat, lng) && pointOnCityLand(lat, lng);
+}
+
 /** Inside the City of LA proper (enclaves excluded), via even-odd ray casting. */
 export function pointInCity(lat: number, lng: number): boolean {
   // Cheap reject first — the full test walks ~8k boundary vertices, and the
@@ -95,5 +166,18 @@ export function cityCells(res: number = H3_RESOLUTION): string[] {
       if (probes.some(([lat, lng]) => pointInCity(lat, lng))) cells.add(n);
     }
   }
-  return [...cells];
+  // The boundary alone admits open water (the city's legal limit runs into
+  // Santa Monica Bay) — keep only cells that touch actual city land.
+  return [...cells].filter((cell) =>
+    [cellToLatLng(cell), ...cellToBoundary(cell)].some(([lat, lng]) =>
+      pointPlayable(lat, lng)
+    )
+  );
+}
+
+/** Is this cell on the playable grid? (center or any vertex on city land) */
+export function cellPlayable(cell: string): boolean {
+  return [cellToLatLng(cell), ...cellToBoundary(cell)].some(([lat, lng]) =>
+    pointPlayable(lat, lng)
+  );
 }

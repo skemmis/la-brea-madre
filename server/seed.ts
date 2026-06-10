@@ -14,7 +14,8 @@ import { getResolution } from "h3-js";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { hexCells, hexAmbient, citationDaily } from "@shared/schema";
-import { cityCells, H3_RESOLUTION } from "./cityBoundary";
+import { cityCells, cellPlayable, H3_RESOLUTION } from "./cityBoundary";
+import { inArray } from "drizzle-orm";
 
 export async function runMigrations(): Promise<void> {
   console.log("[migrate] Applying database migrations...");
@@ -35,10 +36,15 @@ export async function seedHexes(force = false): Promise<number> {
   if (existing.length > 0) {
     const stale = getResolution(existing[0].h3Index) !== H3_RESOLUTION;
     if (!force && !stale) {
+      const pruned = await pruneUnplayableHexes();
       const [{ count }] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(hexCells);
-      console.log(`[seed] hex_cells already has ${count} res-${H3_RESOLUTION} cells, skipping.`);
+      console.log(
+        `[seed] hex_cells already has ${count} res-${H3_RESOLUTION} cells` +
+          (pruned ? ` (pruned ${pruned} off-land)` : "") +
+          ", skipping."
+      );
       return count;
     }
     console.log(
@@ -61,4 +67,25 @@ export async function seedHexes(force = false): Promise<number> {
 
   console.log(`[seed] Done. ${cells.length} hex cells initialized.`);
   return cells.length;
+}
+
+/**
+ * Drop grid cells that aren't on city land — the legal boundary runs into
+ * Santa Monica Bay, and earlier grids seeded open water. Runs at every boot
+ * (a few seconds against ~12k cells), so a deploy that tightens the playable
+ * test cleans the live grid by itself.
+ */
+export async function pruneUnplayableHexes(): Promise<number> {
+  const rows = await db.select({ h3Index: hexCells.h3Index }).from(hexCells);
+  const doomed = rows.map((r) => r.h3Index).filter((h) => !cellPlayable(h));
+  if (!doomed.length) return 0;
+
+  const BATCH = 500;
+  for (let i = 0; i < doomed.length; i += BATCH) {
+    const slice = doomed.slice(i, i + BATCH);
+    await db.delete(citationDaily).where(inArray(citationDaily.h3Index, slice));
+    await db.delete(hexAmbient).where(inArray(hexAmbient.h3Index, slice));
+    await db.delete(hexCells).where(inArray(hexCells.h3Index, slice));
+  }
+  return doomed.length;
 }

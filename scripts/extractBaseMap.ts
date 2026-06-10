@@ -745,7 +745,35 @@ async function mask(): Promise<void> {
   });
 }
 
-const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities, contours, mask };
+/**
+ * The city's LAND, as polygons: the LA Times neighborhood shapes (already the
+ * label source) union-by-membership. The legal city boundary runs out into
+ * Santa Monica Bay; the neighborhoods stop at the shoreline — so "in the
+ * boundary AND in a neighborhood" is the playable-land test the hex grid
+ * seeds against (server/cityBoundary.ts).
+ */
+async function cityland(): Promise<void> {
+  const geo = await fetchJson(HOODS);
+  const features: any[] = [];
+  for (const f of geo.features) {
+    const polys: Pt[][][] =
+      f.geometry.type === "MultiPolygon" ? f.geometry.coordinates : [f.geometry.coordinates];
+    for (const poly of polys) {
+      const rings = poly
+        .map((r: Pt[]) => decimate(r, 0.00008).map(round5))
+        .filter((r) => r.length >= 4);
+      if (!rings.length) continue;
+      features.push({
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Polygon", coordinates: rings },
+      });
+    }
+  }
+  write("la-city-land.geojson", { type: "FeatureCollection", features });
+}
+
+const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities, contours, mask, cityland };
 const only = process.argv[2] as keyof typeof tasks | undefined;
 (async () => {
   for (const [name, fn] of Object.entries(tasks)) {
