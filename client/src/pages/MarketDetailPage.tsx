@@ -10,7 +10,7 @@ import {
   type SeriesPanel,
 } from "../hooks/useExchange";
 import ExchangeMasthead from "../components/ExchangeMasthead";
-import { InkLine, InkBars } from "../components/charts";
+import { InkLine, InkBars, InkBarsDuo } from "../components/charts";
 
 const cents = (p: number) => `${Math.round(p * 100)}¢`;
 const num = (n: number) => n.toLocaleString("en-US");
@@ -85,16 +85,34 @@ export default function MarketDetailPage() {
                     step
                     percent
                     height={170}
+                    hoverLabels={data.priceHistory.map((p, i) =>
+                      i === 0
+                        ? "open"
+                        : new Date(p.t).toLocaleTimeString("en-US", {
+                            hour: "numeric",
+                            minute: "2-digit",
+                            timeZone: "America/Los_Angeles",
+                          })
+                    )}
                   />
                   <div className="text-[9px] text-[var(--sepia-soft)] italic mt-1">
                     Opening odds from the trailing 30 days; each step is a fill on the floor.
                   </div>
                 </div>
 
-                {/* The research desk */}
-                {data.research.map((panel) => (
-                  <ResearchPanel key={panel.metric} panel={panel} line={data.market.kind !== "faceoff" ? data.market.line : undefined} />
-                ))}
+                {/* The research desk: head-to-heads share one chart */}
+                {data.market.kind === "faceoff" && data.research.length === 2 ? (
+                  <FaceoffResearch
+                    a={data.research[0]}
+                    b={data.research[1]}
+                    labelA={data.market.labelA ?? "A"}
+                    labelB={data.market.labelB ?? "B"}
+                  />
+                ) : (
+                  data.research.map((panel) => (
+                    <ResearchPanel key={panel.metric} panel={panel} line={data.market.kind !== "faceoff" ? data.market.line : undefined} />
+                  ))
+                )}
 
                 {/* Settlement rules */}
                 <div className="plate p-4">
@@ -228,6 +246,7 @@ function ResearchPanel({ panel, line }: { panel: SeriesPanel; line?: number }) {
         height={150}
         refY={line && line > 0 ? line : undefined}
         refLabel={line && line > 0 ? `the line: ${num(line)}` : undefined}
+        hoverLabels={panel.series.map((p) => p.date)}
         xLabels={
           first && last
             ? [
@@ -251,6 +270,106 @@ function ResearchPanel({ panel, line }: { panel: SeriesPanel; line?: number }) {
           <InkBars
             values={panel.dow.map((d) => d.avg)}
             labels={DOW}
+            highlight={todayDow}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PINE = "#3c6e50";
+const BRICK = "#a6543c";
+
+function FaceoffResearch({
+  a,
+  b,
+  labelA,
+  labelB,
+}: {
+  a: SeriesPanel;
+  b: SeriesPanel;
+  labelA: string;
+  labelB: string;
+}) {
+  // Align the two legs on shared dates so the gap between them is honest.
+  const bByDate = new Map(b.series.map((p) => [p.date, p.value]));
+  const merged = a.series
+    .filter((p) => bByDate.has(p.date))
+    .map((p) => ({ date: p.date, va: p.value, vb: bByDate.get(p.date)! }));
+  const n = merged.length;
+  const seriesA = merged.map((m, i) => ({ x: n > 1 ? i / (n - 1) : 0, y: m.va }));
+  const seriesB = merged.map((m, i) => ({ x: n > 1 ? i / (n - 1) : 0, y: m.vb }));
+  const todayDow = new Date().getDay();
+  const aWins = merged.slice(-30).filter((m) => m.va > m.vb).length;
+
+  return (
+    <div className="plate p-4">
+      <div className="flex items-baseline justify-between mb-1 gap-3 flex-wrap">
+        <span className="plate-title text-[9px]">THE RECORD — HEAD TO HEAD</span>
+        <span className="text-[9px] text-[var(--sepia-soft)] italic">last 180 days of city records</span>
+      </div>
+      <div className="flex gap-4 mb-2 text-[10px] font-bold" style={{ letterSpacing: "0.1em" }}>
+        <span style={{ color: PINE }}>— {labelA.toUpperCase()}</span>
+        <span style={{ color: BRICK }}>— {labelB.toUpperCase()}</span>
+        <span className="font-normal italic text-[var(--sepia-soft)]" style={{ letterSpacing: "0.02em" }}>
+          {labelA} took {aWins} of the last 30 days
+        </span>
+      </div>
+      <InkLine
+        series={[
+          { points: seriesA, color: PINE, name: labelA },
+          { points: seriesB, color: BRICK, name: labelB },
+        ]}
+        height={170}
+        hoverLabels={merged.map((m) => m.date)}
+        xLabels={
+          n > 1
+            ? [
+                { x: 0.02, label: merged[0].date.slice(5) },
+                { x: 0.98, label: merged[n - 1].date.slice(5) },
+              ]
+            : undefined
+        }
+      />
+      <div className="grid sm:grid-cols-[1fr_280px] gap-4 mt-3 items-end">
+        <div className="text-[11px]">
+          <table className="w-full tabular-nums">
+            <thead>
+              <tr className="text-[8.5px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.15em" }}>
+                <th className="text-left font-normal"> </th>
+                <th className="text-right font-normal">MEAN</th>
+                <th className="text-right font-normal">MEDIAN</th>
+                <th className="text-right font-normal">LAST</th>
+                <th className="text-right font-normal">RECORD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { p: a, label: labelA, color: PINE },
+                { p: b, label: labelB, color: BRICK },
+              ].map(({ p, label, color }) => (
+                <tr key={label} className="border-t border-[var(--ink-faint)]">
+                  <td className="py-1 font-bold" style={{ color }}>{label}</td>
+                  <td className="text-right">{num(p.stats.mean)}</td>
+                  <td className="text-right">{num(p.stats.median)}</td>
+                  <td className="text-right font-bold">{num(p.stats.last)}</td>
+                  <td className="text-right">{num(p.stats.max)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div className="text-[8.5px] text-[var(--sepia-soft)] mb-1" style={{ letterSpacing: "0.2em" }}>
+            BY DAY OF WEEK
+          </div>
+          <InkBarsDuo
+            a={a.dow.map((d) => d.avg)}
+            b={b.dow.map((d) => d.avg)}
+            labels={DOW}
+            aColor={PINE}
+            bColor={BRICK}
             highlight={todayDow}
           />
         </div>

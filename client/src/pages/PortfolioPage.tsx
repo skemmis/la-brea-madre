@@ -76,6 +76,7 @@ export default function PortfolioPage() {
                     y: e.realized,
                   }))}
                   height={150}
+                  hoverLabels={pf.equity.map((e) => e.date)}
                   color={pf.stats.realized >= 0 ? "#3c6e50" : "#a6543c"}
                   refY={0}
                   xLabels={[

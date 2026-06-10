@@ -3,6 +3,7 @@
  * lines, dotted rules, serif figures. Hand-rolled SVG — no chart library,
  * so every mark speaks the map's language.
  */
+import { useState } from "react";
 
 const INK = "#2a366a";
 const SEPIA = "#473423";
@@ -29,10 +30,17 @@ const fmt = (v: number) =>
         ? `${(v / 1000).toFixed(1)}k`
         : String(Math.round(v * 100) / 100);
 
-// ─── Line chart ───────────────────────────────────────────────────────────────
+// ─── Line chart (one or two series, with a crosshair tooltip) ────────────────
+
+export interface InkSeries {
+  points: { x: number; y: number }[]; // x in [0..1] order, y raw
+  color?: string;
+  name?: string;
+}
 
 export function InkLine({
   points,
+  series,
   width = 560,
   height = 160,
   yMin,
@@ -43,42 +51,100 @@ export function InkLine({
   refY,
   refLabel,
   xLabels,
+  hoverLabels,
+  format,
 }: {
-  points: { x: number; y: number }[]; // x in [0..1] order, y raw
+  points?: { x: number; y: number }[];
+  series?: InkSeries[]; // alternative to points: up to two color-coded lines
   width?: number;
   height?: number;
   yMin?: number;
   yMax?: number;
   step?: boolean; // step-after (price charts)
-  percent?: boolean; // format axis as %
+  percent?: boolean; // format axis as ¢
   color?: string;
   refY?: number; // dashed reference line (the "line" of an over/under)
   refLabel?: string;
   xLabels?: { x: number; label: string }[];
+  /** Per-index captions (dates/times) — enables the crosshair tooltip. */
+  hoverLabels?: string[];
+  format?: (v: number) => string;
 }) {
+  const all: InkSeries[] = series ?? (points ? [{ points, color }] : []);
+  const [hover, setHover] = useState<number | null>(null);
   const pad = { l: 40, r: 10, t: 8, b: xLabels ? 20 : 8 };
   const iw = width - pad.l - pad.r;
   const ih = height - pad.t - pad.b;
-  if (!points.length) return null;
+  if (!all.length || !all[0].points.length) return null;
 
-  const ys = points.map((p) => p.y);
+  const ys = all.flatMap((s) => s.points.map((p) => p.y));
   const lo = yMin ?? Math.min(...ys, refY ?? Infinity);
   const hi = yMax ?? Math.max(...ys, refY ?? -Infinity);
   const span = hi - lo || 1;
   const X = (x: number) => pad.l + x * iw;
   const Y = (y: number) => pad.t + ih - ((y - lo) / span) * ih;
 
-  let d = `M ${X(points[0].x)} ${Y(points[0].y)}`;
-  for (let i = 1; i < points.length; i++) {
-    if (step) d += ` L ${X(points[i].x)} ${Y(points[i - 1].y)}`;
-    d += ` L ${X(points[i].x)} ${Y(points[i].y)}`;
-  }
-  if (step) d += ` L ${X(1)} ${Y(points[points.length - 1].y)}`;
+  const paths = all.map((s) => {
+    let d = `M ${X(s.points[0].x)} ${Y(s.points[0].y)}`;
+    for (let i = 1; i < s.points.length; i++) {
+      if (step) d += ` L ${X(s.points[i].x)} ${Y(s.points[i - 1].y)}`;
+      d += ` L ${X(s.points[i].x)} ${Y(s.points[i].y)}`;
+    }
+    if (step) d += ` L ${X(1)} ${Y(s.points[s.points.length - 1].y)}`;
+    return d;
+  });
 
   const ticks = percent ? [0, 0.25, 0.5, 0.75, 1] : niceTicks(lo, hi);
+  const fmtV = format ?? ((v: number) => (percent ? `${Math.round(v * 100)}¢` : fmt(v)));
+  const n = Math.max(...all.map((s) => s.points.length));
+
+  const onMove = hoverLabels
+    ? (e: React.MouseEvent<SVGSVGElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const px = ((e.clientX - rect.left) / rect.width) * width;
+        const idx = Math.round(((px - pad.l) / iw) * (n - 1));
+        setHover(Math.max(0, Math.min(n - 1, idx)));
+      }
+    : undefined;
+
+  // Tooltip layout: flip sides near the right edge.
+  let tip: React.ReactNode = null;
+  if (hover != null && hoverLabels) {
+    const hx = X(all[0].points[Math.min(hover, all[0].points.length - 1)]?.x ?? 0);
+    const lines = [
+      hoverLabels[hover] ?? "",
+      ...all.map((s) => {
+        const p = s.points[Math.min(hover, s.points.length - 1)];
+        return `${s.name ? s.name + "  " : ""}${p ? fmtV(p.y) : ""}`;
+      }),
+    ];
+    const w = Math.max(...lines.map((l) => l.length)) * 5.4 + 12;
+    const bx = hx + 8 + w > width ? hx - 8 - w : hx + 8;
+    tip = (
+      <g pointerEvents="none">
+        <line x1={hx} x2={hx} y1={pad.t} y2={pad.t + ih} stroke={SEPIA} strokeOpacity={0.45} strokeWidth={0.7} strokeDasharray="2 2" />
+        {all.map((s, si) => {
+          const p = s.points[Math.min(hover, s.points.length - 1)];
+          return p ? <circle key={si} cx={X(p.x)} cy={Y(p.y)} r={2.6} fill={s.color ?? INK} /> : null;
+        })}
+        <rect x={bx} y={pad.t + 2} width={w} height={12 + lines.length * 11} fill="#ece4d0" stroke={INK} strokeOpacity={0.6} strokeWidth={0.8} />
+        {lines.map((l, li) => (
+          <text key={li} x={bx + 6} y={pad.t + 14 + li * 11} fontFamily={SERIF} fontSize={li === 0 ? 8.5 : 9.5} fontWeight={li === 0 ? "normal" : "bold"} fill={li === 0 ? SEPIA : (all[li - 1]?.color ?? INK)}>
+            {l}
+          </text>
+        ))}
+      </g>
+    );
+  }
 
   return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
+    <svg
+      width="100%"
+      viewBox={`0 0 ${width} ${height}`}
+      style={{ display: "block" }}
+      onMouseMove={onMove}
+      onMouseLeave={hoverLabels ? () => setHover(null) : undefined}
+    >
       {ticks.map((t) => (
         <g key={t}>
           <line
@@ -117,11 +183,14 @@ export function InkLine({
           {l.label}
         </text>
       ))}
-      <path d={d} fill="none" stroke={color} strokeWidth={1.3} strokeLinejoin="round" />
-      <circle
-        cx={X(points[points.length - 1].x)} cy={Y(points[points.length - 1].y)}
-        r={2.2} fill={color}
-      />
+      {all.map((s, si) => (
+        <path key={si} d={paths[si]} fill="none" stroke={s.color ?? INK} strokeWidth={1.3} strokeLinejoin="round" strokeOpacity={all.length > 1 ? 0.85 : 1} />
+      ))}
+      {all.map((s, si) => {
+        const lp = s.points[s.points.length - 1];
+        return <circle key={si} cx={X(lp.x)} cy={Y(lp.y)} r={2.2} fill={s.color ?? INK} />;
+      })}
+      {tip}
     </svg>
   );
 }
@@ -174,6 +243,63 @@ export function InkBars({
               fontFamily={SERIF} fontSize={8} fill={hot ? "#a6543c" : SEPIA} fillOpacity={0.85}
             >
               {labels[i]}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─── Duo bars (head-to-head day-of-week) ──────────────────────────────────────
+
+export function InkBarsDuo({
+  a,
+  b,
+  labels,
+  aColor = "#3c6e50",
+  bColor = "#a6543c",
+  highlight,
+  width = 300,
+  height = 110,
+}: {
+  a: number[];
+  b: number[];
+  labels: string[];
+  aColor?: string;
+  bColor?: string;
+  highlight?: number;
+  width?: number;
+  height?: number;
+}) {
+  const pad = { l: 6, r: 6, t: 8, b: 16 };
+  const iw = width - pad.l - pad.r;
+  const ih = height - pad.t - pad.b;
+  const max = Math.max(...a, ...b, 1);
+  const slot = iw / labels.length;
+  const bw = slot * 0.3;
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
+      {labels.map((lab, i) => {
+        const hot = i === highlight;
+        const ha = (a[i] / max) * ih;
+        const hb = (b[i] / max) * ih;
+        const x0 = pad.l + i * slot + slot * 0.15;
+        return (
+          <g key={lab}>
+            <rect x={x0} y={pad.t + ih - ha} width={bw} height={ha} fill={aColor} fillOpacity={0.45} stroke={aColor} strokeWidth={0.8}>
+              <title>{`${lab} — ${fmt(a[i])}`}</title>
+            </rect>
+            <rect x={x0 + bw + 1.5} y={pad.t + ih - hb} width={bw} height={hb} fill={bColor} fillOpacity={0.45} stroke={bColor} strokeWidth={0.8}>
+              <title>{`${lab} — ${fmt(b[i])}`}</title>
+            </rect>
+            <text
+              x={x0 + bw + 0.75} y={height - 4} textAnchor="middle"
+              fontFamily={SERIF} fontSize={8} fill={hot ? "#a6543c" : SEPIA} fillOpacity={0.85}
+              fontWeight={hot ? "bold" : "normal"}
+            >
+              {lab}
             </text>
           </g>
         );
