@@ -154,7 +154,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "symbol-placement": "line",
         "text-field": ["get", "name"] as any,
         "text-font": SERIF,
-        "text-size": ["interpolate", ["linear"], ["zoom"], 10.5, 9.5, 14, 13] as any,
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10.5, 9.5, 14, 14.5] as any,
         "text-letter-spacing": 0.06,
         // Like the reference sheets: the name rides just above the street's
         // ink line rather than running over it.
@@ -163,10 +163,12 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "text-padding": 4,
       },
       paint: {
+        // Full ink and a slim halo: a fat halo eats the serif hairlines and
+        // is most of what reads as "muddy" at close zoom.
         "text-color": INK_HEX,
-        "text-opacity": 0.82,
+        "text-opacity": 0.9,
         "text-halo-color": PAPER,
-        "text-halo-width": 1.2,
+        "text-halo-width": 0.9,
       },
     },
     // Highway numbers along the freeways.
@@ -329,6 +331,10 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
   const selectRef = useRef({ onSelectHex, selectedHex });
   selectRef.current = { onSelectHex, selectedHex };
 
+  // Paper grain reads as age at sheet scale but as noise over the type up
+  // close — fade it back as the reader leans in.
+  const [grainOpacity, setGrainOpacity] = useState(0.55);
+
   const { data: hexes = [] } = useQuery<HexData[]>({
     queryKey: ["/api/map/hexes"],
     queryFn: () => apiRequest("GET", "/api/map/hexes"),
@@ -373,6 +379,10 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     });
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
+    const onZoom = () =>
+      setGrainOpacity(Math.min(0.55, Math.max(0.22, 0.55 - (map.getZoom() - 9.5) * 0.075)));
+    map.on("zoom", onZoom);
+    onZoom();
 
     const overlay = new MapboxOverlay({ interleaved: false, layers: [] });
     map.addControl(overlay);
@@ -479,7 +489,7 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
           inset: 0,
           pointerEvents: "none",
           backgroundImage: GRAIN,
-          opacity: 0.55,
+          opacity: grainOpacity,
           mixBlendMode: "multiply",
         }}
       />
