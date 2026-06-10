@@ -25,7 +25,6 @@ import {
   settleDue,
   rollExchangeDay,
 } from "./exchangeService";
-import { openPackFor, getCollection } from "./deckService";
 import { runDailyTick } from "./backgroundJobs";
 import {
   runFullPipeline,
@@ -129,12 +128,12 @@ export function registerRoutes(app: Express) {
 
   // ── Territory Actions ─────────────────────────────────────────────────────────
 
-  // A Work Order action (expand / upgrade / contest). Validation + costs
+  // A Work Order action (expand / upgrade / repair / buyout). Validation + costs
   // live in the core; this just translates the out-of-orders case nicely.
   async function runOrderAction(req: Request, res: Response, action: Action) {
     const user = req.user as any;
     try {
-      if (action.type !== "defend" && (await outOfOrders(user.id))) {
+      if (action.type !== "assess" && (await outOfOrders(user.id))) {
         return res.status(409).json({ error: "No Work Orders left — carrion in your territory earns more." });
       }
       const result = await doAction(user.id, action);
@@ -165,31 +164,22 @@ export function registerRoutes(app: Express) {
     return runOrderAction(req, res, { type: "repair", h3: h3Index });
   });
 
-  // Acquire a relic — the daily action.
-  app.post("/api/player/relic", requireAuth, (req: Request, res: Response) => {
-    const { relicId } = req.body;
-    if (!relicId || typeof relicId !== "string") {
-      return res.status(400).json({ error: "relicId required" });
+  // Re-assess your parcel's price (free; the tax is the cost of bravado).
+  app.post("/api/territory/assess", requireAuth, (req: Request, res: Response) => {
+    const { h3Index, price } = req.body;
+    if (!h3Index || typeof h3Index !== "string" || typeof price !== "number") {
+      return res.status(400).json({ error: "h3Index (string) and price (number) required" });
     }
-    return runOrderAction(req, res, { type: "acquireRelic", relicId });
+    return runOrderAction(req, res, { type: "assess", h3: h3Index, price });
   });
 
-  // Declare a sealed-bid contest on an adjacent enemy hex.
-  app.post("/api/territory/contest", requireAuth, (req: Request, res: Response) => {
-    const { h3Index, bid } = req.body;
-    if (!h3Index || typeof h3Index !== "string" || typeof bid !== "number") {
-      return res.status(400).json({ error: "h3Index (string) and bid (number) required" });
+  // Buy any parcel at its owner's asking price (1 order + the price).
+  app.post("/api/territory/buyout", requireAuth, (req: Request, res: Response) => {
+    const { h3Index } = req.body;
+    if (!h3Index || typeof h3Index !== "string") {
+      return res.status(400).json({ error: "h3Index required" });
     }
-    return runOrderAction(req, res, { type: "contest", h3: h3Index, bid });
-  });
-
-  // Counter-commit dollars to defend your embattled hex (no order needed).
-  app.post("/api/territory/defend", requireAuth, (req: Request, res: Response) => {
-    const { h3Index, bid } = req.body;
-    if (!h3Index || typeof h3Index !== "string" || typeof bid !== "number") {
-      return res.status(400).json({ error: "h3Index (string) and bid (number) required" });
-    }
-    return runOrderAction(req, res, { type: "defend", h3: h3Index, bid });
+    return runOrderAction(req, res, { type: "buyout", h3: h3Index });
   });
 
   app.post("/api/territory/raid", requireAuth, (_req: Request, res: Response) => {
@@ -292,24 +282,6 @@ export function registerRoutes(app: Express) {
   app.post("/api/admin/exchange/roll", requireAdmin, async (_req: Request, res: Response) => {
     try {
       res.json(await rollExchangeDay());
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  // ── Deck / Packs ────────────────────────────────────────────────────────────────
-
-  // The player's collection, combined effects, and the full catalog.
-  app.get("/api/deck", requireAuth, async (req: Request, res: Response) => {
-    const user = req.user as any;
-    res.json(await getCollection(user.id));
-  });
-
-  // Spend crude to open a pack.
-  app.post("/api/deck/open-pack", requireAuth, async (req: Request, res: Response) => {
-    const user = req.user as any;
-    try {
-      res.json(await openPackFor(user.id));
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }

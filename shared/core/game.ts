@@ -10,10 +10,8 @@
  */
 import { gridDisk } from "h3-js";
 import { makeRng } from "./rng";
-import { relicDef, RELICS, type YieldHookCtx } from "./relics";
 import type {
   Action,
-  ContestResult,
   DispatchEntry,
   GameConfig,
   GameEvent,
@@ -54,6 +52,11 @@ function claimCost(config: GameConfig, ownedCount: number, h3: string): number {
   return claimPrice(config, h3);
 }
 
+/** A parcel's current asking price (owner-set, defaulting to market value). */
+export function assessedPrice(state: GameState, config: GameConfig, h3: string): number {
+  return state.hexes[h3]?.price ?? claimPrice(config, h3);
+}
+
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
 export function newGame(config: GameConfig, seed: number): GameState {
@@ -62,8 +65,6 @@ export function newGame(config: GameConfig, seed: number): GameState {
     players[id] = {
       id,
       crude: config.startingCrude,
-      relics: [],
-      cards: [],
       workOrders: config.workOrders.starting,
       actionUsedTick: -1,
     };
@@ -87,8 +88,6 @@ export function addPlayer(state: GameState, config: GameConfig, playerId: Player
   next.players[playerId] = {
     id: playerId,
     crude: config.startingCrude,
-    relics: [],
-    cards: [],
     workOrders: config.workOrders.starting,
     actionUsedTick: -1,
   };
@@ -104,11 +103,9 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
   const actions: Action[] = [{ type: "pass" }];
   const mine = ownedHexes(state, playerId);
 
-  // Defend is always available on your own embattled hexes (no order cost).
-  for (const [h3, c] of Object.entries(state.contests ?? {})) {
-    if (c.defenderId === playerId && player.crude > 0) {
-      actions.push({ type: "defend", h3, bid: 0 });
-    }
+  // Re-pricing your own land is free — the tax is the cost of bravado.
+  for (const h of mine) {
+    actions.push({ type: "assess", h3: h, price: assessedPrice(state, config, h) });
   }
 
   // Everything below spends a Work Order.
@@ -148,24 +145,10 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
     }
   }
 
-  // Acquire relic: any not-yet-owned relic you can afford.
-  if (player.crude >= config.costs.relic) {
-    for (const id of Object.keys(RELICS)) {
-      if (!player.relics.includes(id)) actions.push({ type: "acquireRelic", relicId: id });
-    }
-  }
-
-  // Contest: an enemy hex on your frontier, not already embattled.
-  if (player.crude >= config.combat.minBid) {
-    const frontier = new Set<string>();
-    for (const h of mine) {
-      for (const n of gridDisk(h, 1)) {
-        const owner = hexState(state, n).ownerId;
-        if (n !== h && config.board[n] && owner && owner !== playerId) frontier.add(n);
-      }
-    }
-    for (const h of frontier) {
-      if (!state.contests?.[h]) actions.push({ type: "contest", h3: h, bid: 0 });
+  // Buyout: any other player's parcel, at the owner's own asking price.
+  for (const [h3, hx] of Object.entries(state.hexes)) {
+    if (hx.ownerId && hx.ownerId !== playerId && player.crude >= assessedPrice(state, config, h3)) {
+      actions.push({ type: "buyout", h3 });
     }
   }
 
@@ -173,10 +156,8 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
 }
 
 function actionsEqual(a: Action, b: Action): boolean {
-  // Bids are free-form amounts — legality is about the target, not the size.
-  if ((a.type === "contest" || a.type === "defend") && a.type === b.type) {
-    return a.h3 === (b as Extract<Action, { type: "contest" | "defend" }>).h3;
-  }
+  // Prices are free-form — legality is about the parcel, not the number.
+  if (a.type === "assess" && b.type === "assess") return a.h3 === b.h3;
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -208,6 +189,7 @@ export function applyAction(
       player.workOrders -= 1;
       const hx = ensureHex(action.h3);
       hx.ownerId = playerId;
+      hx.price = claimPrice(config, action.h3); // honest by default
       break;
     }
 
@@ -219,34 +201,26 @@ export function applyAction(
       break;
     }
 
-    case "acquireRelic": {
-      player.crude -= config.costs.relic;
-      player.workOrders -= 1;
-      player.relics.push(action.relicId);
+    case "assess": {
+      // Free: name your price. The county taxes what you name.
+      if (!(action.price >= config.assessment.minPrice)) {
+        throw new Error(`Assessments start at $${config.assessment.minPrice}.`);
+      }
+      next.hexes[action.h3].price = Math.round(action.price);
       break;
     }
 
-    case "contest": {
-      // Declare war: escrow the sealed bid, spend the order. Resolves at tick.
-      if (!(action.bid >= config.combat.minBid)) {
-        throw new Error(`A war chest needs at least $${config.combat.minBid}.`);
-      }
-      if (player.crude < action.bid) throw new Error("Not enough money for that bid.");
-      const target = hexState(next, action.h3);
-      if (!target.ownerId || target.ownerId === playerId) {
-        throw new Error("Only an enemy hex can be contested.");
-      }
-      player.crude -= action.bid;
+    case "buyout": {
+      // The Harberger handshake: pay the owner their own number, take the deed.
+      const hx = next.hexes[action.h3];
+      const price = assessedPrice(next, config, action.h3);
+      if (player.crude < price) throw new Error("Not enough money for that asking price.");
+      const seller = next.players[hx.ownerId!];
+      player.crude -= price;
       player.workOrders -= 1;
-      next.contests ??= {};
-      next.contests[action.h3] = {
-        h3: action.h3,
-        attackerId: playerId,
-        defenderId: target.ownerId,
-        attackerBid: action.bid,
-        defenderBid: 0,
-        declaredTick: next.tick,
-      };
+      if (seller) seller.crude += price;
+      hx.ownerId = playerId;
+      // The new owner inherits improvements and the price they just proved.
       break;
     }
 
@@ -255,16 +229,6 @@ export function applyAction(
       player.crude -= hx.degradation * config.quake.repairPerPoint;
       player.workOrders -= 1;
       hx.degradation = 0;
-      break;
-    }
-
-    case "defend": {
-      const c = next.contests?.[action.h3];
-      if (!c || c.defenderId !== playerId) throw new Error("No contest to defend there.");
-      if (!(action.bid > 0)) throw new Error("A defense bid must be positive.");
-      if (player.crude < action.bid) throw new Error("Not enough money for that bid.");
-      player.crude -= action.bid;
-      c.defenderBid += action.bid; // raises accumulate
       break;
     }
   }
@@ -296,9 +260,9 @@ export function tick(
     byHex.get(e.h3)!.push(e);
   }
 
-  const report: TickReport = { tick: next.tick, perPlayer: {}, contests: [] };
+  const report: TickReport = { tick: next.tick, perPlayer: {}, foreclosures: [] };
   for (const id of Object.keys(next.players)) {
-    report.perPlayer[id] = { gained: 0, ordersEarned: 0, entries: [] };
+    report.perPlayer[id] = { gained: 0, ordersEarned: 0, taxPaid: 0, entries: [] };
   }
 
   for (const [h3, hx] of Object.entries(next.hexes)) {
@@ -308,8 +272,6 @@ export function tick(
 
     const wells = config.board[h3]?.wells ?? 0;
     const hexEvents = byHex.get(h3) ?? [];
-    const ctx: YieldHookCtx = { wells, level: hx.upgradeLevel, events: hexEvents };
-    const relics = player.relics.map(relicDef).filter(Boolean) as ReturnType<typeof relicDef>[];
 
     // The purse: your hexes pay what the city ticketed there ($/day), plus a
     // little oil flavor money. Real records, real dollars — no dice.
@@ -319,31 +281,14 @@ export function tick(
     const base = fineDollars * y.finePayout + wells * y.perWell;
     const upgradeMult = 1 + (y.upgradeBonus[hx.upgradeLevel] ?? 0);
     const degradeFactor = 1 - hx.degradation / 100;
-
-    let relicMult = 1;
-    let relicBonus = 0;
     const notes: string[] = [];
-    for (const r of relics) {
-      if (r!.yieldMult) relicMult *= r!.yieldMult(ctx);
-      if (r!.yieldBonus) relicBonus += r!.yieldBonus(ctx);
-      const note = r!.note?.(ctx);
-      if (note) notes.push(note);
-    }
 
-    const baseYield = Math.floor(base * upgradeMult * degradeFactor);
-    const finalYield = Math.max(
-      0,
-      Math.floor(base * upgradeMult * degradeFactor * relicMult) + relicBonus
-    );
-
-    // The Madre stirs: quake events deposit degradation (relics can soften it).
+    // The Madre stirs: quake events deposit degradation.
     const quakeDamage = hexEvents
       .filter((e) => e.kind === "quake")
       .reduce((a, e) => a + e.magnitude, 0);
     if (quakeDamage > 0) {
-      let degradeMult = 1;
-      for (const r of relics) if (r!.degradeMult) degradeMult *= r!.degradeMult();
-      hx.degradation = Math.min(100, hx.degradation + Math.round(quakeDamage * degradeMult));
+      hx.degradation = Math.min(100, hx.degradation + Math.round(quakeDamage));
       notes.push("the Madre stirred");
     }
 
@@ -358,6 +303,9 @@ export function tick(
       if (carrion >= 1) notes.push("the city calls — carrion pickup");
     }
 
+    const baseYield = Math.floor(base * upgradeMult * degradeFactor);
+    const finalYield = Math.max(0, baseYield);
+
     player.crude += finalYield;
     report.perPlayer[hx.ownerId].gained += finalYield;
     report.perPlayer[hx.ownerId].entries.push({ h3, baseYield, finalYield, notes });
@@ -370,37 +318,33 @@ export function tick(
     }
   }
 
-  // Resolve the wars: sealed bids open at the tick. Higher purse takes the
-  // hex; the defender wins ties; the loser recovers half their committed war
-  // chest; the winner's is spent (the city keeps it).
-  for (const c of Object.values(next.contests ?? {})) {
-    const hx = next.hexes[c.h3];
-    const attacker = next.players[c.attackerId];
-    const defender = next.players[c.defenderId];
-    // The hex changed hands or vanished since declaration: stand down, full refunds.
-    if (!hx || hx.ownerId !== c.defenderId || !attacker || !defender) {
-      if (attacker) attacker.crude += c.attackerBid;
-      if (defender) defender.crude += c.defenderBid;
+  // The county collects: daily tax on every parcel's self-assessed price.
+  // Can't pay? The county takes parcels for back taxes, cheapest first.
+  const rate = config.assessment.taxRate;
+  for (const [id, player] of Object.entries(next.players)) {
+    const owned = Object.entries(next.hexes)
+      .filter(([, hx]) => hx.ownerId === id)
+      .map(([h3, hx]) => ({ h3, hx, price: hx.price ?? claimPrice(config, h3) }));
+    if (!owned.length) continue;
+
+    let tax = Math.round(owned.reduce((a, o) => a + o.price, 0) * rate);
+    if (player.crude >= tax) {
+      player.crude -= tax;
+      report.perPlayer[id].taxPaid = tax;
       continue;
     }
-    const attackerWins = c.attackerBid > c.defenderBid;
-    const winnerId = attackerWins ? c.attackerId : c.defenderId;
-    if (attackerWins) {
-      hx.ownerId = c.attackerId;
-      defender.crude += c.defenderBid * config.combat.loserRefund;
-    } else {
-      attacker.crude += c.attackerBid * config.combat.loserRefund;
+    // Foreclosure: forfeit lowest-priced parcels until the bill fits.
+    owned.sort((a, b) => a.price - b.price);
+    while (owned.length && player.crude < tax) {
+      const lost = owned.shift()!;
+      lost.hx.ownerId = null;
+      report.foreclosures.push({ h3: lost.h3, ownerId: id });
+      tax = Math.round(owned.reduce((a, o) => a + o.price, 0) * rate);
     }
-    report.contests.push({
-      h3: c.h3,
-      attackerId: c.attackerId,
-      defenderId: c.defenderId,
-      attackerBid: c.attackerBid,
-      defenderBid: c.defenderBid,
-      winnerId,
-    });
+    const due = Math.min(tax, Math.max(0, player.crude));
+    player.crude -= due;
+    report.perPlayer[id].taxPaid = due;
   }
-  next.contests = {};
 
   next.tick += 1;
   next.lastReport = report;

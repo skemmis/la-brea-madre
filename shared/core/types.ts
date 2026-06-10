@@ -26,7 +26,6 @@ export interface GameConfig {
     claimValueMult: number;
     firstClaimFree: boolean;
     upgrade: number[]; // cost to go from level i -> i+1
-    relic: number;
   };
   yield: {
     /** $ paid per $ of parking fines written in an owned hex each day. */
@@ -43,9 +42,11 @@ export interface GameConfig {
     cap: number;
     starting: number;
   };
-  combat: {
-    minBid: number; // smallest legal war chest
-    loserRefund: number; // share of the losing bid returned (0..1)
+  assessment: {
+    /** Daily property tax as a fraction of each parcel's assessed price. */
+    taxRate: number;
+    /** Assessments can't go below this floor. */
+    minPrice: number;
   };
   quake: {
     /** $ per point of degradation to repair a shaken parcel. */
@@ -54,11 +55,6 @@ export interface GameConfig {
   market: {
     liquidity: number; // LMSR `b` — depth + bound on the maker's max loss
     payoutPerShare: number; // crude paid per winning share at resolution
-  };
-  pack: {
-    cost: number; // crude to open a pack
-    size: number; // cards per pack
-    duplicateRefund: number; // crude back per duplicate drawn
   };
 }
 
@@ -77,6 +73,8 @@ export interface GameEvent {
 export interface HexState {
   ownerId: PlayerId | null;
   upgradeLevel: number;
+  /** Owner's self-assessed price: anyone may buy at it; tax accrues on it. */
+  price?: number;
   /** @deprecated the exploit stance is gone; kept so old saves parse. */
   exploited?: boolean;
   degradation: number; // 0..100
@@ -86,8 +84,10 @@ export interface PlayerState {
   id: PlayerId;
   /** Bankroll in dollars. (Field name is a fossil from the oil era.) */
   crude: number;
-  relics: string[];
-  cards: string[]; // owned deck-building cards (unique; passive effects)
+  /** @deprecated relics/cards are gone; kept so old saves parse. */
+  relics?: string[];
+  /** @deprecated */
+  cards?: string[];
   /** Work Orders: the action currency, earned from carrion in your territory. */
   workOrders: number;
   /** @deprecated pre-WorkOrder daily-action marker; kept for old saves. */
@@ -105,29 +105,10 @@ export interface TickReport {
   tick: number;
   perPlayer: Record<
     PlayerId,
-    { gained: number; ordersEarned: number; entries: DispatchEntry[] }
+    { gained: number; ordersEarned: number; taxPaid: number; entries: DispatchEntry[] }
   >;
-  contests: ContestResult[];
-}
-
-// ─── Contests (sealed-bid wars over owned hexes) ───────────────────────────────
-
-export interface Contest {
-  h3: string;
-  attackerId: PlayerId;
-  defenderId: PlayerId;
-  attackerBid: number; // escrowed $
-  defenderBid: number; // escrowed $ (0 until the defender commits)
-  declaredTick: number;
-}
-
-export interface ContestResult {
-  h3: string;
-  attackerId: PlayerId;
-  defenderId: PlayerId;
-  attackerBid: number;
-  defenderBid: number;
-  winnerId: PlayerId;
+  /** Parcels the county took for back taxes this tick. */
+  foreclosures: { h3: string; ownerId: PlayerId }[];
 }
 
 // ─── Prediction markets (the first surface) ────────────────────────────────────
@@ -180,8 +161,8 @@ export interface GameState {
   players: Record<PlayerId, PlayerState>;
   /** Sparse: only hexes that differ from the default (unowned/pristine). */
   hexes: Record<string, HexState>;
-  /** Open sealed-bid contests, keyed by the embattled hex. */
-  contests?: Record<string, Contest>;
+  /** @deprecated sealed-bid wars are gone; kept so old saves parse. */
+  contests?: Record<string, unknown>;
   /** Bumped when balances are rescaled (v2 = dollars). */
   economyVersion?: number;
   /** The most recent tick's dispatch — the "what happened overnight" reveal. */
@@ -197,8 +178,7 @@ export interface GameState {
 export type Action =
   | { type: "expand"; h3: string } // claim an adjacent unowned hex (1 order + $)
   | { type: "upgrade"; h3: string } // deepen an owned hex (1 order + $)
-  | { type: "acquireRelic"; relicId: string } // power up self (1 order + $)
-  | { type: "contest"; h3: string; bid: number } // sealed-bid war (1 order + escrow)
-  | { type: "defend"; h3: string; bid: number } // counter-commit $ (no order)
   | { type: "repair"; h3: string } // clear quake degradation (1 order + $)
+  | { type: "assess"; h3: string; price: number } // set your parcel's price (free)
+  | { type: "buyout"; h3: string } // buy any parcel at its assessed price (1 order)
   | { type: "pass" };

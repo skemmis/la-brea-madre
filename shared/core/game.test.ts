@@ -79,21 +79,6 @@ test("the same seed + actions produce identical state (determinism)", () => {
   assert.deepEqual(run(), run());
 });
 
-test("relics modify yield (Wildcatter's Nerve adds +1 per held hex)", () => {
-  const c2 = defaultConfig(board, ["1"]);
-  const baseRun = () => {
-    let s = newGame(c2, 7);
-    s = applyAction(s, c2, "1", { type: "expand", h3: CENTER });
-    return tick(s, c2, []).lastReport!.perPlayer["1"].gained;
-  };
-  const relicRun = () => {
-    let s = newGame(c2, 7);
-    s.players["1"].relics = ["wildcatter"];
-    s = applyAction(s, c2, "1", { type: "expand", h3: CENTER });
-    return tick(s, c2, []).lastReport!.perPlayer["1"].gained;
-  };
-  assert.equal(relicRun(), baseRun() + 1);
-});
 
 test("addPlayer adds a newcomer and is a no-op if already present", () => {
   let s = newGame({ ...cfg, players: [] }, 1);
@@ -110,9 +95,11 @@ test("fine events pay real dollars to the hex owner", () => {
   s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
   const before = s.players["1"].crude;
   s = tick(s, cfg, [{ h3: CENTER, kind: "fine", magnitude: 730 }]);
-  // $730 of tickets + 2 wells × $5 flavor = $740, no dice.
-  assert.equal(s.players["1"].crude, before + 740);
+  // $730 of tickets + 2 wells × $5 flavor = $740, minus the county's tax.
+  const tax = s.lastReport!.perPlayer["1"].taxPaid;
   assert.equal(s.lastReport!.perPlayer["1"].gained, 740);
+  assert.ok(tax >= 1, "the county always collects");
+  assert.equal(s.players["1"].crude, before + 740 - tax);
 });
 
 test("carrion in your territory earns Work Orders, capped", () => {
@@ -132,52 +119,8 @@ test("the weekly free order arrives when the shell says it's Monday", () => {
   assert.equal(s.players["1"].workOrders, before + cfg.workOrders.weeklyFree);
 });
 
-test("a sealed-bid contest: higher purse takes the hex, loser gets half back", () => {
-  const cfg2 = defaultConfig(board, ["1", "2"]);
-  let s = newGame(cfg2, 7);
-  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
-  const enemyHex = RING.find((h) => h !== CENTER)!;
-  s = applyAction(s, cfg2, "2", { type: "expand", h3: enemyHex });
 
-  // Player 1 declares war with $200; player 2 commits $120 in defense.
-  const cash1 = s.players["1"].crude;
-  const cash2 = s.players["2"].crude;
-  s = applyAction(s, cfg2, "1", { type: "contest", h3: enemyHex, bid: 200 });
-  assert.equal(s.players["1"].crude, cash1 - 200);
-  s = applyAction(s, cfg2, "2", { type: "defend", h3: enemyHex, bid: 120 });
 
-  s = tick(s, cfg2, []);
-  assert.equal(s.hexes[enemyHex].ownerId, "1", "attacker takes the hex");
-  assert.equal(s.players["2"].crude, cash2 - 120 + 60, "defender recovers half");
-  assert.equal(s.lastReport!.contests[0].winnerId, "1");
-  assert.deepEqual(s.contests, {}, "the war is over");
-});
-
-test("the defender wins ties and the attacker forfeits half the chest", () => {
-  const cfg2 = defaultConfig(board, ["1", "2"]);
-  let s = newGame(cfg2, 7);
-  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
-  const enemyHex = RING.find((h) => h !== CENTER)!;
-  s = applyAction(s, cfg2, "2", { type: "expand", h3: enemyHex });
-  const cash1 = s.players["1"].crude;
-  s = applyAction(s, cfg2, "1", { type: "contest", h3: enemyHex, bid: 150 });
-  s = applyAction(s, cfg2, "2", { type: "defend", h3: enemyHex, bid: 150 });
-  s = tick(s, cfg2, []);
-  assert.equal(s.hexes[enemyHex].ownerId, "2", "defender holds on a tie");
-  const yielded = s.lastReport!.perPlayer["1"].gained; // CENTER's well money
-  assert.equal(s.players["1"].crude, cash1 - 150 + 75 + yielded);
-});
-
-test("an undefended hex falls to any legal bid", () => {
-  const cfg2 = defaultConfig(board, ["1", "2"]);
-  let s = newGame(cfg2, 7);
-  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
-  const enemyHex = RING.find((h) => h !== CENTER)!;
-  s = applyAction(s, cfg2, "2", { type: "expand", h3: enemyHex });
-  s = applyAction(s, cfg2, "1", { type: "contest", h3: enemyHex, bid: cfg2.combat.minBid });
-  s = tick(s, cfg2, []);
-  assert.equal(s.hexes[enemyHex].ownerId, "1");
-});
 
 test("quake events deposit degradation", () => {
   let s = start();
@@ -196,4 +139,48 @@ test("repair clears degradation for an order plus $ per point", () => {
   assert.equal(s.hexes[CENTER].degradation, 0);
   assert.equal(s.players["1"].crude, cash - 30 * cfg.quake.repairPerPoint);
   assert.equal(s.players["1"].workOrders, orders - 1);
+});
+
+test("a buyout pays the owner their own asking price", () => {
+  const cfg2 = defaultConfig(board, ["1", "2"]);
+  let s = newGame(cfg2, 7);
+  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
+  s = applyAction(s, cfg2, "1", { type: "assess", h3: CENTER, price: 400 });
+  const buyerCash = s.players["2"].crude;
+  const sellerCash = s.players["1"].crude;
+  s = applyAction(s, cfg2, "2", { type: "buyout", h3: CENTER });
+  assert.equal(s.hexes[CENTER].ownerId, "2", "the deed transfers");
+  assert.equal(s.players["2"].crude, buyerCash - 400);
+  assert.equal(s.players["1"].crude, sellerCash + 400, "the owner pockets their number");
+});
+
+test("the county taxes assessments daily", () => {
+  let s = start();
+  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
+  s = applyAction(s, cfg, "1", { type: "assess", h3: CENTER, price: 1000 });
+  const cash = s.players["1"].crude;
+  s = tick(s, cfg, []);
+  const yielded = s.lastReport!.perPlayer["1"].gained;
+  const tax = Math.round(1000 * cfg.assessment.taxRate);
+  assert.equal(s.lastReport!.perPlayer["1"].taxPaid, tax);
+  assert.equal(s.players["1"].crude, cash + yielded - tax);
+});
+
+test("underpriced bravado: a low assessment means cheap taxes but a cheap parcel", () => {
+  const cfg2 = defaultConfig(board, ["1", "2"]);
+  let s = newGame(cfg2, 7);
+  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
+  s = applyAction(s, cfg2, "1", { type: "assess", h3: CENTER, price: cfg2.assessment.minPrice });
+  s = applyAction(s, cfg2, "2", { type: "buyout", h3: CENTER });
+  assert.equal(s.hexes[CENTER].ownerId, "2", "lowballers get sniped");
+});
+
+test("foreclosure: the county takes parcels when the tax can't be paid", () => {
+  let s = start();
+  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
+  s = applyAction(s, cfg, "1", { type: "assess", h3: CENTER, price: 100000 });
+  s.players["1"].crude = 0; // broke, with a six-figure assessment
+  s = tick(s, cfg, []);
+  assert.equal(s.hexes[CENTER].ownerId, null, "the county takes it");
+  assert.equal(s.lastReport!.foreclosures.length, 1);
 });

@@ -21,7 +21,6 @@ export function defaultConfig(
       claimValueMult: 30, // a parcel costs ~a month of its ticket money
       firstClaimFree: true,
       upgrade: [200, 400, 800],
-      relic: 600,
     },
     yield: {
       finePayout: 1, // your hexes pay what the city tickets there, 1:1
@@ -34,9 +33,9 @@ export function defaultConfig(
       cap: 10,
       starting: 2,
     },
-    combat: {
-      minBid: 50,
-      loserRefund: 0.5,
+    assessment: {
+      taxRate: 0.005, // 0.5%/day of your own asking price — honesty has rent
+      minPrice: 100,
     },
     quake: {
       repairPerPoint: 2, // a fully wrecked parcel costs $200 to fix
@@ -44,11 +43,6 @@ export function defaultConfig(
     market: {
       liquidity: 1000,
       payoutPerShare: 1,
-    },
-    pack: {
-      cost: 250,
-      size: 3,
-      duplicateRefund: 80,
     },
     ...overrides,
   };

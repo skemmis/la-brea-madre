@@ -14,6 +14,7 @@ import { pool, db } from "./db";
 import { hexCells, hexAmbient, citationDaily, users } from "@shared/schema";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import {
+  assessedPrice,
   newGame,
   addPlayer,
   applyAction,
@@ -266,7 +267,6 @@ export async function getPlayerView(
     avatarUrl,
     crude: player.crude,
     totalHexes: hexIndexes.length,
-    relics: player.relics,
     hexIndexes,
     workOrders: Math.floor(player.workOrders ?? 0),
     tickDate: todayPT(),
@@ -302,6 +302,8 @@ export interface MapHex {
   citationToday: number;
   fineDollarsPerDay: number;
   shakePoints: number;
+  askingPrice: number;
+  dailyTax: number;
   deadAnimalPerMonth: number;
   ownerName?: string;
   neighborhood: string | null;
@@ -316,7 +318,7 @@ export interface MapHex {
 
 /** Project board + ambient + live metrics + core ownership into the map payload. */
 export async function projectMap(): Promise<MapHex[]> {
-  const { state } = await getOrInitGame();
+  const { state, config } = await getOrInitGame();
   const today = todayPT();
   const meta = await getPipelineMeta();
   const citWindow = Math.max(1, meta["citation_window_days"] ?? 1);
@@ -367,6 +369,10 @@ export async function projectMap(): Promise<MapHex[]> {
       citationToday: c.citationToday ?? 0,
       fineDollarsPerDay: Math.round((c.totalFineToday ?? 0) / citWindow),
       shakePoints: shake.get(c.h3Index) ?? 0,
+      askingPrice: assessedPrice(state, config, c.h3Index),
+      dailyTax: hx?.ownerId
+        ? Math.round(assessedPrice(state, config, c.h3Index) * config.assessment.taxRate)
+        : 0,
       // Monthly rate: res-9 cells are small enough that a daily rate rounds
       // to 0.0 for almost every cell.
       deadAnimalPerMonth: round1(((c.deadAnimalCount ?? 0) / daWindow) * 30),
@@ -381,7 +387,7 @@ export async function projectMap(): Promise<MapHex[]> {
               baseYieldPerTick: c.baseYieldPerTick ?? 1,
             }
           : null,
-      pendingContest: !!state.contests?.[c.h3Index],
+      pendingContest: false, // wars are gone; the field rides until the UI drops it
     };
   });
 }
