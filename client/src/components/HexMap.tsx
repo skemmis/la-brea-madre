@@ -10,6 +10,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../lib/queryClient";
 import LayerControl from "./LayerControl";
@@ -341,6 +342,15 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
   const [layerId, setLayerId] = useState<LayerId>("ownership");
   const layer = getLayer(layerId);
 
+  // Yesterday's dead-animal pickups, plotted as glowing dots on the carrion
+  // layer — the exact report locations, not the hex aggregate. (Experimental.)
+  const { data: carrion } = useQuery<{ date: string; points: { lng: number; lat: number }[] }>({
+    queryKey: ["/api/map/carrion-points"],
+    queryFn: () => apiRequest("GET", "/api/map/carrion-points"),
+    enabled: layerId === "deadanimals",
+    staleTime: 15 * 60_000,
+  });
+
   // Max value of the active metric, for normalizing the heat ramp.
   const maxMetric = useMemo(() => {
     if (!layer.metric) return 1;
@@ -434,15 +444,33 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     [hexes, layerId, layer, maxMetric, viewerUserId, selectedHex]
   );
 
+  // Glow = three concentric scatter dots: a soft halo, a brighter middle,
+  // and a near-white hot core. Pixel radii so it reads at every zoom.
+  const carrionGlowLayers = useMemo(() => {
+    if (layerId !== "deadanimals" || !carrion?.points?.length) return [];
+    const common = {
+      data: carrion.points,
+      getPosition: (d: { lng: number; lat: number }) => [d.lng, d.lat] as [number, number],
+      radiusUnits: "pixels" as const,
+      stroked: false,
+      pickable: false,
+    };
+    return [
+      new ScatterplotLayer({ id: "carrion-glow-halo", ...common, getRadius: 12, getFillColor: [110, 175, 95, 55] }),
+      new ScatterplotLayer({ id: "carrion-glow-mid", ...common, getRadius: 6, getFillColor: [130, 205, 110, 140] }),
+      new ScatterplotLayer({ id: "carrion-glow-core", ...common, getRadius: 2.4, getFillColor: [240, 255, 225, 255] }),
+    ];
+  }, [carrion, layerId]);
+
   useEffect(() => {
     overlayRef.current?.setProps({
-      layers: [hexLayer],
+      layers: [hexLayer, ...carrionGlowLayers],
       onHover: ({ object }) => {
         const canvas = mapRef.current?.getCanvas();
         if (canvas) canvas.style.cursor = object ? "pointer" : "";
       },
     });
-  }, [hexLayer]);
+  }, [hexLayer, carrionGlowLayers]);
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative", background: OCEAN }}>

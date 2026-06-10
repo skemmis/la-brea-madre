@@ -29,6 +29,8 @@ import {
   runCitationHistory,
   runMakeHistory,
   runDiagnostics,
+  fetchDeadAnimalPoints,
+  yesterdayPT,
 } from "./dataPipeline";
 import type { Action } from "@shared/core";
 
@@ -50,6 +52,21 @@ export function registerRoutes(app: Express) {
     } catch (err) {
       console.error("GET /api/map/hexes error:", err);
       res.status(500).json({ error: "Failed to fetch hexes" });
+    }
+  });
+
+  // Exact dead-animal report locations for one day (default: yesterday PT) —
+  // the carrion layer's glowing dots. Experimental, display-only.
+  app.get("/api/map/carrion-points", async (req: Request, res: Response) => {
+    try {
+      const q = req.query.date;
+      const date =
+        typeof q === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : yesterdayPT();
+      const points = await fetchDeadAnimalPoints(date);
+      res.json({ date, count: points.length, points });
+    } catch (err) {
+      console.error("GET /api/map/carrion-points error:", err);
+      res.status(500).json({ error: "Failed to fetch carrion points" });
     }
   });
 

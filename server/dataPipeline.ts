@@ -382,6 +382,55 @@ export async function runOilWellsCensus(): Promise<{
 
 // ─── Dead Animal Reports (MyLA311 Cases 2026) ──────────────────────────────────
 
+/** The PT calendar day before todayPT(), as YYYY-MM-DD. */
+export function yesterdayPT(): string {
+  const t = new Date(`${todayPT()}T12:00:00Z`);
+  t.setUTCDate(t.getUTCDate() - 1);
+  return t.toISOString().slice(0, 10);
+}
+
+// Exact report locations for one day's dead-animal pickups — the carrion
+// layer's glowing dots. Fetched straight from MyLA311 and cached in memory;
+// display-only, nothing touches the DB. (Experimental.)
+const carrionPointsCache = new Map<
+  string,
+  { at: number; points: { lng: number; lat: number }[] }
+>();
+
+export async function fetchDeadAnimalPoints(
+  date: string
+): Promise<{ lng: number; lat: number }[]> {
+  const hit = carrionPointsCache.get(date);
+  if (hit && Date.now() - hit.at < 15 * 60_000) return hit.points;
+
+  const next = new Date(`${date}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  const nextDay = next.toISOString().slice(0, 10);
+
+  const url = "https://data.lacity.org/resource/2cy6-i7zn.json";
+  const params: Record<string, string> = {
+    $select: "geolocation__latitude__s,geolocation__longitude__s",
+    $where:
+      `lower(type) like '%animal%'` +
+      ` AND createddate >= '${date}T00:00:00'` +
+      ` AND createddate < '${nextDay}T00:00:00'`,
+    $limit: "5000",
+  };
+  if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
+
+  const resp = await axios.get<any[]>(url, { params, timeout: 30000 });
+  const points: { lng: number; lat: number }[] = [];
+  for (const row of resp.data ?? []) {
+    const coord = parseCoord(row.geolocation__latitude__s, row.geolocation__longitude__s);
+    if (!coord) continue;
+    const [lat, lng] = coord;
+    if (!inLA(lat, lng)) continue;
+    points.push({ lng: +lng.toFixed(5), lat: +lat.toFixed(5) });
+  }
+  carrionPointsCache.set(date, { at: Date.now(), points });
+  return points;
+}
+
 export async function runDeadAnimalCensus(): Promise<{
   fetched: number;
   indexed: number;
