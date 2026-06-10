@@ -33,8 +33,6 @@ export interface GameConfig {
     finePayout: number;
     perWell: number; // small flat $ bonus per oil well (legacy flavor)
     upgradeBonus: number[]; // additive yield bonus by upgrade level
-    exploitMultiplier: number;
-    exploitDegradePerTick: number;
   };
   workOrders: {
     /** Orders granted per dead-animal report/day in owned territory. */
@@ -52,8 +50,6 @@ export interface GameConfig {
   quake: {
     /** $ per point of degradation to repair a shaken parcel. */
     repairPerPoint: number;
-    /** Exploited parcels take this multiple of quake damage. */
-    exploitedDamageMult: number;
   };
   market: {
     liquidity: number; // LMSR `b` — depth + bound on the maker's max loss
@@ -81,7 +77,8 @@ export interface GameEvent {
 export interface HexState {
   ownerId: PlayerId | null;
   upgradeLevel: number;
-  exploited: boolean;
+  /** @deprecated the exploit stance is gone; kept so old saves parse. */
+  exploited?: boolean;
   degradation: number; // 0..100
 }
 
@@ -204,5 +201,4 @@ export type Action =
   | { type: "contest"; h3: string; bid: number } // sealed-bid war (1 order + escrow)
   | { type: "defend"; h3: string; bid: number } // counter-commit $ (no order)
   | { type: "repair"; h3: string } // clear quake degradation (1 order + $)
-  | { type: "setExploit"; h3: string; on: boolean } // free stance, costs nothing
   | { type: "pass" };

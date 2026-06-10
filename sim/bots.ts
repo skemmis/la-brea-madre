@@ -4,7 +4,6 @@
  *   rentier    plays "correctly": prime ticket land, upgrades, prompt repairs
  *   scavenger  chases carrion to snowball Work Orders
  *   sprawler   expands every order, never maintains (tests empire restriction)
- *   exploiter  exploits everything, repairs never (tests degradation economics)
  *   warlord    thin economy, sealed-bid raids (tests combat pricing)
  *   drifter    random legal actions (chaos baseline + crash fuzzing)
  *
@@ -162,32 +161,6 @@ export function sprawler(): Bot {
   };
 }
 
-export function exploiter(): Bot {
-  return {
-    name: "exploiter",
-    nextAction(ctx) {
-      const owned = mine(ctx.state, ctx.me);
-      // Free stance flips don't cost orders: exploit everything not yet burning.
-      const calm = owned.find(
-        (h) => !ctx.state.hexes[h].exploited && ctx.state.hexes[h].degradation < 100
-      );
-      if (calm) return { type: "setExploit", h3: calm, on: true };
-
-      if (orders(ctx.state, ctx.me) < 1) return null;
-      if (!owned.length) {
-        const h = bestUnowned(ctx, ctx.world.byFine);
-        return h ? { type: "expand", h3: h } : null;
-      }
-      const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
-      const claim = best(f, (h) => fineOf(ctx, h));
-      return claim ? { type: "expand", h3: claim } : null;
-    },
-    defendBid(ctx, h3) {
-      return Math.min(cash(ctx.state, ctx.me) * 0.3, incomeOf(ctx, h3) * 2);
-    },
-  };
-}
-
 export function warlord(): Bot {
   return {
     name: "warlord",
@@ -268,7 +241,6 @@ export const PERSONAS: Record<string, () => Bot> = {
   rentier,
   scavenger,
   sprawler,
-  exploiter,
   warlord,
   drifter,
 };

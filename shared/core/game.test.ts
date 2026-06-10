@@ -69,20 +69,6 @@ test("actions deplete Work Orders and stop at zero", () => {
   assert.throws(() => applyAction(s, cfg, "1", { type: "expand", h3: another }));
 });
 
-test("setExploit is a free stance and degrades the hex on tick", () => {
-  let s = start();
-  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
-  s = tick(s, cfg, []);
-  // Toggling exploit does not consume the daily action...
-  s = applyAction(s, cfg, "1", { type: "setExploit", h3: CENTER, on: true });
-  assert.equal(s.hexes[CENTER].exploited, true);
-  // ...and we can still take a daily action this tick.
-  const next = RING.find((h) => h !== CENTER)!;
-  assert.doesNotThrow(() => applyAction(s, cfg, "1", { type: "expand", h3: next }));
-  // Exploiting accrues degradation on the next tick.
-  s = tick(s, cfg, []);
-  assert.equal(s.hexes[CENTER].degradation, cfg.yield.exploitDegradePerTick);
-});
 
 test("the same seed + actions produce identical state (determinism)", () => {
   const run = () => {
@@ -193,16 +179,11 @@ test("an undefended hex falls to any legal bid", () => {
   assert.equal(s.hexes[enemyHex].ownerId, "1");
 });
 
-test("quake events deposit degradation, doubled when exploited", () => {
+test("quake events deposit degradation", () => {
   let s = start();
   s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
   s = tick(s, cfg, [{ h3: CENTER, kind: "quake", magnitude: 10 }]);
   assert.equal(s.hexes[CENTER].degradation, 10);
-
-  s = applyAction(s, cfg, "1", { type: "setExploit", h3: CENTER, on: true });
-  s = tick(s, cfg, [{ h3: CENTER, kind: "quake", magnitude: 10 }]);
-  // +20 (doubled) +20 exploit-degrade from the stance itself
-  assert.equal(s.hexes[CENTER].degradation, 50);
 });
 
 test("repair clears degradation for an order plus $ per point", () => {

@@ -165,21 +165,6 @@ export function registerRoutes(app: Express) {
     return runOrderAction(req, res, { type: "repair", h3: h3Index });
   });
 
-  // Toggle exploit mode — a free stance, not the daily action.
-  app.post("/api/territory/exploit", requireAuth, async (req: Request, res: Response) => {
-    const user = req.user as any;
-    const { h3Index, exploit } = req.body;
-    if (!h3Index || typeof exploit !== "boolean") {
-      return res.status(400).json({ error: "h3Index and exploit (boolean) required" });
-    }
-    try {
-      await doAction(user.id, { type: "setExploit", h3: h3Index, on: exploit });
-      res.json({ ok: true, h3Index, isExploited: exploit });
-    } catch (err: any) {
-      res.status(400).json({ error: err?.message ?? "Can't change exploit stance here." });
-    }
-  });
-
   // Acquire a relic — the daily action.
   app.post("/api/player/relic", requireAuth, (req: Request, res: Response) => {
     const { relicId } = req.body;

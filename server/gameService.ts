@@ -297,7 +297,6 @@ export interface MapHex {
   h3Index: string;
   ownerId: number | null;
   upgradeLevel: number;
-  isExploited: boolean;
   degradation: number;
   lastTickYield: number;
   citationToday: number;
@@ -363,7 +362,6 @@ export async function projectMap(): Promise<MapHex[]> {
       h3Index: c.h3Index,
       ownerId,
       upgradeLevel: hx?.upgradeLevel ?? 0,
-      isExploited: hx?.exploited ?? false,
       degradation: hx?.degradation ?? 0,
       lastTickYield: lastYield[c.h3Index] ?? 0,
       citationToday: c.citationToday ?? 0,

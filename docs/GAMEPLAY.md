@@ -18,7 +18,6 @@ it each day**, times multipliers:
 
     pay = (ticket $/day + wells × $5)
           × (1 + upgrade bonus)        — +50% / +100% / +150% by level
-          × (×2 if exploiting)
           × (1 − degradation/100)
 
 Prime metered land prints thousands a day; hillsides print nothing.
@@ -41,15 +40,13 @@ strategic tension.
 | Contest | escrowed bid ($50 min) | Open a sealed-bid war (below) |
 | Relic   | $600 | Passive yield perk |
 
-Free (no order): toggle **Exploit** — ×2 income, +20 degradation/day; plunder
-that ruins the parcel — and **Defend** in a war.
+Free (no order): **Defend** in a war.
 
 ## Quakes — the maintenance tax
 
 Real USGS earthquakes (polled every 30 minutes, M1.5+ near the basin) deal
 degradation to owned parcels in a heat-map footprint around the epicenter
-(Gaussian falloff; an M2 covers a district, an M3 a region), **doubled on
-exploited parcels**. Degradation cuts income until repaired; repair costs an
+(Gaussian falloff; an M2 covers a district, an M3 a region). Degradation cuts income until repaired; repair costs an
 order, and the order bank is capped — so the bigger the empire, the longer its
 shaken edges bleed. The map's Seismic layer shows 30 days of shake heat; the
 seismograph bulletin lists fresh events.
@@ -84,8 +81,7 @@ loss refunds). Duplicates melt down for $80.
 2. Carrion in your territory becomes Work Orders (Mondays: +1 free for all).
 3. Unapplied quakes deal their damage.
 4. Wars resolve (sealed bids open).
-5. Exploited parcels degrade.
-6. The market board closes; tomorrow's slate opens.
+5. The market board closes; tomorrow's slate opens.
 
 ## Testing
 

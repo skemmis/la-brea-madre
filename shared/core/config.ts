@@ -27,8 +27,6 @@ export function defaultConfig(
       finePayout: 1, // your hexes pay what the city tickets there, 1:1
       perWell: 5, // oil keeps a little flavor money
       upgradeBonus: [0, 0.5, 1.0, 1.5],
-      exploitMultiplier: 2,
-      exploitDegradePerTick: 20,
     },
     workOrders: {
       perCarrion: 1,
@@ -42,7 +40,6 @@ export function defaultConfig(
     },
     quake: {
       repairPerPoint: 2, // a fully wrecked parcel costs $200 to fix
-      exploitedDamageMult: 2,
     },
     market: {
       liquidity: 1000,

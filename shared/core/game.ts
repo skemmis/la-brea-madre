@@ -26,7 +26,6 @@ import type {
 const DEFAULT_HEX: HexState = {
   ownerId: null,
   upgradeLevel: 0,
-  exploited: false,
   degradation: 0,
 };
 
@@ -104,12 +103,6 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
 
   const actions: Action[] = [{ type: "pass" }];
   const mine = ownedHexes(state, playerId);
-
-  // Free stance toggles (do not consume the daily action).
-  for (const h of mine) {
-    const hx = hexState(state, h);
-    if (hx.degradation < 100) actions.push({ type: "setExploit", h3: h, on: !hx.exploited });
-  }
 
   // Defend is always available on your own embattled hexes (no order cost).
   for (const [h3, c] of Object.entries(state.contests ?? {})) {
@@ -207,12 +200,6 @@ export function applyAction(
   switch (action.type) {
     case "pass":
       break;
-
-    case "setExploit": {
-      const hx = ensureHex(action.h3);
-      hx.exploited = action.on; // free stance — does not consume the daily action
-      break;
-    }
 
     case "expand": {
       const mine = ownedHexes(next, playerId);
@@ -321,7 +308,7 @@ export function tick(
 
     const wells = config.board[h3]?.wells ?? 0;
     const hexEvents = byHex.get(h3) ?? [];
-    const ctx: YieldHookCtx = { wells, level: hx.upgradeLevel, exploited: hx.exploited, events: hexEvents };
+    const ctx: YieldHookCtx = { wells, level: hx.upgradeLevel, events: hexEvents };
     const relics = player.relics.map(relicDef).filter(Boolean) as ReturnType<typeof relicDef>[];
 
     // The purse: your hexes pay what the city ticketed there ($/day), plus a
@@ -331,7 +318,6 @@ export function tick(
       .reduce((a, e) => a + e.magnitude, 0);
     const base = fineDollars * y.finePayout + wells * y.perWell;
     const upgradeMult = 1 + (y.upgradeBonus[hx.upgradeLevel] ?? 0);
-    const exploitMult = hx.exploited ? y.exploitMultiplier : 1;
     const degradeFactor = 1 - hx.degradation / 100;
 
     let relicMult = 1;
@@ -344,20 +330,20 @@ export function tick(
       if (note) notes.push(note);
     }
 
-    const baseYield = Math.floor(base * upgradeMult * exploitMult * degradeFactor);
+    const baseYield = Math.floor(base * upgradeMult * degradeFactor);
     const finalYield = Math.max(
       0,
-      Math.floor(base * upgradeMult * exploitMult * degradeFactor * relicMult) + relicBonus
+      Math.floor(base * upgradeMult * degradeFactor * relicMult) + relicBonus
     );
 
-    // The Madre stirs: quake events deposit degradation, doubled on
-    // exploited parcels — she remembers who's been pumping.
+    // The Madre stirs: quake events deposit degradation (relics can soften it).
     const quakeDamage = hexEvents
       .filter((e) => e.kind === "quake")
       .reduce((a, e) => a + e.magnitude, 0);
     if (quakeDamage > 0) {
-      const mult = hx.exploited ? config.quake.exploitedDamageMult : 1;
-      hx.degradation = Math.min(100, hx.degradation + Math.round(quakeDamage * mult));
+      let degradeMult = 1;
+      for (const r of relics) if (r!.degradeMult) degradeMult *= r!.degradeMult();
+      hx.degradation = Math.min(100, hx.degradation + Math.round(quakeDamage * degradeMult));
       notes.push("the Madre stirred");
     }
 
@@ -375,13 +361,6 @@ export function tick(
     player.crude += finalYield;
     report.perPlayer[hx.ownerId].gained += finalYield;
     report.perPlayer[hx.ownerId].entries.push({ h3, baseYield, finalYield, notes });
-
-    // Exploit degrades the hex (relics can soften it).
-    if (hx.exploited) {
-      let degradeMult = 1;
-      for (const r of relics) if (r!.degradeMult) degradeMult *= r!.degradeMult();
-      hx.degradation = Math.min(100, hx.degradation + y.exploitDegradePerTick * degradeMult);
-    }
   }
 
   // The weekly free order (Mondays, from the shell's clock).
@@ -408,7 +387,6 @@ export function tick(
     const winnerId = attackerWins ? c.attackerId : c.defenderId;
     if (attackerWins) {
       hx.ownerId = c.attackerId;
-      hx.exploited = false; // spoils keep their upgrades, not their stance
       defender.crude += c.defenderBid * config.combat.loserRefund;
     } else {
       attacker.crude += c.attackerBid * config.combat.loserRefund;

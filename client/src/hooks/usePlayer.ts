@@ -55,23 +55,6 @@ export function useUpgradeHex() {
   });
 }
 
-export function useExploitHex() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ h3Index, exploit }: { h3Index: string; exploit: boolean }) =>
-      apiRequest("POST", "/api/territory/exploit", { h3Index, exploit }),
-    onSuccess: (_, { exploit }) => {
-      qc.invalidateQueries({ queryKey: ["/api/map/hexes"] });
-      toast[exploit ? "warning" : "success"](
-        exploit
-          ? "Exploit mode enabled. She will remember."
-          : "Exploit mode disabled."
-      );
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-}
-
 export function useRepairHex() {
   const qc = useQueryClient();
   return useMutation({

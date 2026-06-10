@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { X, Zap, ArrowUp, Flame, Swords, Shield, Hammer } from "lucide-react";
+import { X, Zap, ArrowUp, Swords, Shield, Hammer } from "lucide-react";
 import type { HexData } from "./HexMap";
 import {
   useClaimHex,
   useUpgradeHex,
-  useExploitHex,
   useContestHex,
   useDefendHex,
   useRepairHex,
@@ -28,7 +27,6 @@ const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, onClose }: Props) {
   const claim = useClaimHex();
   const upgrade = useUpgradeHex();
-  const exploit = useExploitHex();
   const contest = useContestHex();
   const defend = useDefendHex();
   const repair = useRepairHex();
@@ -46,10 +44,7 @@ export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, on
   const wells = hex.ambient?.oilWellCount ?? 0;
   const upgradeBonus = [0, 0.5, 1.0, 1.5][hex.upgradeLevel] ?? 0;
   const estimatedYield = Math.floor(
-    (finePerDay + wells * 5) *
-      (1 + upgradeBonus) *
-      (1 - hex.degradation / 100) *
-      (hex.isExploited ? 2 : 1)
+    (finePerDay + wells * 5) * (1 + upgradeBonus) * (1 - hex.degradation / 100)
   );
 
   return (
@@ -112,22 +107,6 @@ export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, on
             </div>
           )}
         </div>
-
-        {/* Exploit toggle (mine only, no order cost) */}
-        {isMine && !depleted && (
-          <button
-            onClick={() => exploit.mutate({ h3Index: hex.h3Index, exploit: !hex.isExploited })}
-            className="btn-ink w-full flex items-center gap-2 px-3 py-1.5 text-xs"
-            style={
-              hex.isExploited
-                ? { color: "var(--brick)", borderColor: "rgba(166,84,60,0.6)", background: "rgba(166,84,60,0.08)" }
-                : undefined
-            }
-          >
-            <Flame size={12} />
-            {hex.isExploited ? "EXPLOITING — disable?" : "Enable exploit (×2 pay, degrades)"}
-          </button>
-        )}
 
         {/* Work Order actions */}
         {viewerUserId && (

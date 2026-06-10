@@ -35,7 +35,7 @@ function arg(name: string, fallback: string): string {
 const DAYS = parseInt(arg("days", "120"), 10);
 const SEED = parseInt(arg("seed", "7"), 10);
 const WORLD = arg("world", "la");
-const BOTS = arg("bots", "rentier,scavenger,sprawler,exploiter,warlord,drifter").split(",");
+const BOTS = arg("bots", "rentier,scavenger,sprawler,warlord,drifter").split(",");
 const MAX_ACTIONS_PER_DAY = 8;
 
 // ─── Invariants: the rulebook can't bend ──────────────────────────────────────
@@ -241,10 +241,6 @@ async function main() {
   const leader = last.reduce((a, b) => (b.parcels > a.parcels ? b : a));
   if (leader.parcels > totalParcels * 0.5)
     flags.push(`RUNAWAY: ${leader.bot} holds ${leader.parcels}/${totalParcels} parcels — expansion is under-restricted.`);
-  const exploiterIdx = bots.findIndex((b) => b.name === "exploiter");
-  const rentierIdx = bots.findIndex((b) => b.name === "rentier");
-  if (exploiterIdx !== -1 && rentierIdx !== -1 && last[exploiterIdx].cash > last[rentierIdx].cash * 1.3)
-    flags.push(`EXPLOIT OP: never-repairing exploiter out-earns the careful rentier by >30%.`);
   const warlordIdx = bots.findIndex((b) => b.name === "warlord");
   if (warlordIdx !== -1 && tallies[ids[warlordIdx]].contestsWon === 0 && (tallies[ids[warlordIdx]].actions["contest"] ?? 0) > 3)
     flags.push(`WAR DEAD LETTER: the warlord declared ${tallies[ids[warlordIdx]].actions["contest"]} contests and won none.`);

@@ -322,7 +322,6 @@ export interface HexData {
   h3Index: string;
   ownerId: number | null;
   upgradeLevel: number;
-  isExploited: boolean;
   degradation: number;
   lastTickYield: number;
   citationToday?: number;

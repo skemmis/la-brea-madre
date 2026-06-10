@@ -10,7 +10,6 @@ import type { GameEvent } from "./types";
 export interface YieldHookCtx {
   wells: number;
   level: number;
-  exploited: boolean;
   events: GameEvent[]; // events on this hex this tick
 }
 
@@ -54,14 +53,14 @@ export const RELICS: Record<string, RelicDef> = {
   meter_maids_cut: {
     id: "meter_maids_cut",
     name: "Meter Maid's Cut",
-    text: "Skim the citations: +1 crude per citation/day on your land.",
-    yieldBonus: (c) => Math.ceil(sumMag(c.events, "citation")),
-    note: (c) => (sumMag(c.events, "citation") > 0 ? "skimmed citations" : null),
+    text: "Skim the take: +$1 per $100 of fines written on your land.",
+    yieldBonus: (c) => Math.ceil(sumMag(c.events, "fine") / 100),
+    note: (c) => (sumMag(c.events, "fine") > 0 ? "skimmed the take" : null),
   },
   tar_seal: {
     id: "tar_seal",
     name: "Tar Seal",
-    text: "Your hexes degrade half as fast when exploited.",
+    text: "The Madre's tremors land half as hard on your sealed ground.",
     degradeMult: () => 0.5,
   },
 };
