@@ -34,7 +34,7 @@ import {
   median,
   type MetricPoint,
 } from "./marketMetrics";
-import { boardSpecsFor, type BoardSpec } from "./exchangeBoard";
+import { boardSpecsFor, VIOLATIONS, type BoardSpec } from "./exchangeBoard";
 
 const WINDOW = 30; // trailing days used to set lines + opening odds
 const YES_NO = ["YES", "NO"];
@@ -425,6 +425,18 @@ const METRIC_FALLBACK_LABELS: Record<string, string> = {
   dead_animals: "Dead animal reports / day",
 };
 
+/** Chart caption for a metric series, e.g. "Venice — tickets / day". */
+function researchLabel(metric: string, label: string | null): string {
+  if (metric.startsWith("hoodcit:")) return `${label} — tickets / day`;
+  if (metric.startsWith("hoodda:")) return `${label} — dead animals / day`;
+  if (metric.startsWith("viol:")) {
+    const v = VIOLATIONS[metric.slice(5)];
+    return v ? `${v.phrase} / day` : metric;
+  }
+  if (label) return `${label} ticketed / day`;
+  return METRIC_FALLBACK_LABELS[metric] ?? metric;
+}
+
 export async function getMarketDetail(marketId: string, userId?: number): Promise<MarketDetail> {
   const today = todayPT();
   const { state } = await getOrInitGame();
@@ -500,16 +512,12 @@ export async function getMarketDetail(marketId: string, userId?: number): Promis
 
   // The research desk: the underlying series for each leg.
   const research: SeriesPanel[] = [];
-  const labelA =
-    round.label_a ??
-    METRIC_FALLBACK_LABELS[round.metric_a ?? ""] ??
-    (round.metric_a ?? "Series");
   if (round.metric_a) {
-    const p = await seriesPanel(round.metric_a, round.label_a ? `${round.label_a} ticketed / day` : labelA);
+    const p = await seriesPanel(round.metric_a, researchLabel(round.metric_a, round.label_a));
     if (p) research.push(p);
   }
   if (round.metric_b) {
-    const p = await seriesPanel(round.metric_b, round.label_b ? `${round.label_b} ticketed / day` : round.metric_b);
+    const p = await seriesPanel(round.metric_b, researchLabel(round.metric_b, round.label_b));
     if (p) research.push(p);
   }
 
@@ -617,9 +625,13 @@ export async function sell(
  */
 async function dataReady(round: RoundRow): Promise<boolean> {
   const probe = round.metric_a ?? "citations";
-  const base = probe.startsWith("make:") || probe.startsWith("color:") || probe.startsWith("viol:")
-    ? "citations"
-    : probe;
+  const base =
+    probe.startsWith("make:") || probe.startsWith("color:") ||
+    probe.startsWith("viol:") || probe.startsWith("hoodcit:")
+      ? "citations"
+      : probe.startsWith("hoodda:")
+        ? "dead_animals"
+        : probe;
   const series = (await getMetricSeries(base)) as MetricPoint[];
   return series.some((p) => p.date > round.target_date);
 }

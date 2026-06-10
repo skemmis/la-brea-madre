@@ -52,6 +52,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
     roads: { type: "geojson", data: "/geo/la-roads.geojson" },
     boundary: { type: "geojson", data: "/geo/la-city-boundary.geojson" },
     mask: { type: "geojson", data: "/geo/la-city-mask.geojson" },
+    districts: { type: "geojson", data: "/geo/la-city-land.geojson" },
     hoods: { type: "geojson", data: "/geo/la-neighborhood-labels.geojson" },
     cities: { type: "geojson", data: "/geo/la-city-labels.geojson" },
     ocean: {
@@ -121,6 +122,20 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "line-color": INK_HEX,
         "line-width": ["match", ["get", "type"], "Major Highway", 1.6, 0.9] as any,
         "line-opacity": 0.59,
+      },
+    },
+    // District boundaries: the LA Times neighborhood lines, dashed faint
+    // sepia under the labels that name them — the survey lines of the sheet.
+    {
+      id: "district-lines",
+      type: "line",
+      source: "districts",
+      minzoom: 10,
+      paint: {
+        "line-color": SEPIA_HEX,
+        "line-width": 0.8,
+        "line-dasharray": [2, 3] as any,
+        "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.12, 12, 0.28] as any,
       },
     },
     // The focus mask: a translucent paper wash over everything beyond the

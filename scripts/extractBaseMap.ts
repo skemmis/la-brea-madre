@@ -765,7 +765,9 @@ async function cityland(): Promise<void> {
       if (!rings.length) continue;
       features.push({
         type: "Feature",
-        properties: {},
+        // The name rides along: the map draws these as district boundaries,
+        // and the exchange prices neighborhood markets off their extents.
+        properties: { name: f.properties?.name ?? "" },
         geometry: { type: "Polygon", coordinates: rings },
       });
     }

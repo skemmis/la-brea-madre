@@ -13,6 +13,7 @@ import {
   runCitationPipeline,
   runCitationHistory,
   runMakeHistory,
+  runNeighborhoodHistory,
   runDeadAnimalCensus,
 } from "./dataPipeline";
 import { rollExchangeDay, settleDue } from "./exchangeService";
@@ -97,6 +98,7 @@ export function startBackgroundJobs() {
       console.log("[pipeline] Market history refresh...");
       await runCitationHistory();
       await runMakeHistory();
+      await runNeighborhoodHistory();
       await runDeadAnimalCensus();
       const settled = await settleDue();
       if (settled.length) console.log(`[exchange] Settled ${settled.length} market(s).`);
@@ -117,6 +119,11 @@ export function startBackgroundJobs() {
         await runCitationHistory();
         await runMakeHistory();
         await runDeadAnimalCensus();
+      }
+      const hoodProbe = await getMetricSeries("hoodcit:VENICE");
+      if (hoodProbe.length < 60) {
+        console.log("[exchange] Neighborhood series missing — backfilling...");
+        await runNeighborhoodHistory();
       }
       const r = await rollExchangeDay();
       console.log(`[exchange] Boot roll: day ${r.day}, settled ${r.settled}.`);

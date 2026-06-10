@@ -12,6 +12,7 @@ const CATEGORIES: { key: string; label: string }[] = [
   { key: "makes", label: "MAKES & MARQUES" },
   { key: "colors", label: "COLORS" },
   { key: "violations", label: "VIOLATIONS" },
+  { key: "hoods", label: "THE NEIGHBORHOODS" },
   { key: "specials", label: "SPECIALS" },
 ];
 

@@ -45,6 +45,22 @@ export const VIOLATIONS: Record<string, { socrata: string; phrase: string }> = {
   PREF: { socrata: "PREFERENTIAL PARKING", phrase: "preferential-parking tickets" },
 };
 
+// Marquee neighborhoods for district markets. `name` must match the LA Times
+// polygon names in la-city-land.geojson; `key` is the metric suffix
+// (hoodcit:<KEY> tickets/day, hoodda:<KEY> dead animals/day).
+export const HOODS: { key: string; name: string }[] = [
+  { key: "VENICE", name: "Venice" },
+  { key: "HOLLYWOOD", name: "Hollywood" },
+  { key: "DOWNTOWN", name: "Downtown" },
+  { key: "KOREATOWN", name: "Koreatown" },
+  { key: "SILVERLAKE", name: "Silver Lake" },
+  { key: "ECHOPARK", name: "Echo Park" },
+  { key: "WESTWOOD", name: "Westwood" },
+  { key: "SANPEDRO", name: "San Pedro" },
+  { key: "VANNUYS", name: "Van Nuys" },
+  { key: "BOYLEHEIGHTS", name: "Boyle Heights" },
+];
+
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // "Toyotas", but "Mercedes" stays "Mercedes".
@@ -56,7 +72,7 @@ export interface BoardSpec {
   /** Stable id prefix; full market id is `${specId}-${day}`. */
   specId: string;
   kind: "overunder" | "faceoff" | "weekday";
-  category: "totals" | "makes" | "colors" | "violations" | "specials";
+  category: "totals" | "makes" | "colors" | "violations" | "hoods" | "specials";
   metricA: string;
   metricB?: string;
   labelA?: string; // display name of side A (faceoffs)
@@ -214,6 +230,41 @@ export function boardSpecsFor(day: string): BoardSpec[] {
       rules: `Settles YES if citations coded "${VIOLATIONS[v].socrata}" strictly exceed the line for the day.`,
     });
   }
+
+  // ── The neighborhoods: a district face-off, a ticket prop, and a
+  //    dead-animal prop, rotating through the marquee districts ──
+  const [ha, hb, hc, hd] = pick(rng, HOODS, 4);
+  specs.push(
+    {
+      specId: `hfo_${ha.key}_${hb.key}`,
+      kind: "faceoff",
+      category: "hoods",
+      metricA: `hoodcit:${ha.key}`,
+      metricB: `hoodcit:${hb.key}`,
+      labelA: ha.name,
+      labelB: hb.name,
+      question: () => `Will ${ha.name} out-ticket ${hb.name} today?`,
+      rules: `Settles YES if strictly more parking citations are written within ${ha.name} than within ${hb.name} today, counted by each district's bounds (LA Times neighborhood boundaries). Ties settle NO.`,
+    },
+    {
+      specId: `hou_${hc.key}`,
+      kind: "overunder",
+      category: "hoods",
+      metricA: `hoodcit:${hc.key}`,
+      labelA: hc.name,
+      question: (l) => `Will ${hc.name} rack up more than ${num(l)} parking tickets today?`,
+      rules: `Settles YES if strictly more than the line of parking citations are written within ${hc.name}'s bounds (LA Times neighborhood boundaries) today.`,
+    },
+    {
+      specId: `hda_${hd.key}`,
+      kind: "overunder",
+      category: "hoods",
+      metricA: `hoodda:${hd.key}`,
+      labelA: hd.name,
+      question: (l) => `Will more than ${num(l)} dead animals be reported in ${hd.name} today?`,
+      rules: `Settles YES if strictly more than the line of MyLA311 dead-animal removal requests fall within ${hd.name}'s bounds (LA Times neighborhood boundaries) today.`,
+    }
+  );
 
   // ── The weekday special ──
   specs.push({

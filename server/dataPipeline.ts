@@ -3,6 +3,8 @@
  * - Parking citations from LA Socrata (4f5p-udkv)
  * - Oil wells from CalGEM (WellSTAR)
  */
+import fs from "fs";
+import path from "path";
 import axios from "axios";
 import proj4 from "proj4";
 import { latLngToCell } from "h3-js";
@@ -18,7 +20,7 @@ import {
 } from "./storage";
 import { eq, sql } from "drizzle-orm";
 import { pointInCity, H3_RESOLUTION } from "./cityBoundary";
-import { MAKE_LABELS, COLOR_LABELS, VIOLATIONS } from "./exchangeBoard";
+import { MAKE_LABELS, COLOR_LABELS, VIOLATIONS, HOODS } from "./exchangeBoard";
 
 const SOCRATA_APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
 
@@ -298,6 +300,146 @@ export async function runMakeHistory(days = 1200): Promise<{
       console.error(`Cohort history error (${pull.field}):`, err);
       results.errors++;
     }
+  }
+
+  return results;
+}
+
+// ─── Neighborhood series (district markets) ────────────────────────────────────
+
+/** WGS84 bbox of a named LA Times neighborhood from la-city-land.geojson. */
+function hoodBbox(name: string): [number, number, number, number] | null {
+  const candidates = [
+    "client/public/geo/la-city-land.geojson",
+    "dist/public/geo/la-city-land.geojson",
+  ];
+  for (const rel of candidates) {
+    const p = path.resolve(process.cwd(), rel);
+    if (!fs.existsSync(p)) continue;
+    const geo = JSON.parse(fs.readFileSync(p, "utf8"));
+    let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
+    let found = false;
+    for (const f of geo.features) {
+      if (f.properties?.name !== name) continue;
+      found = true;
+      for (const ring of f.geometry.coordinates) {
+        for (const [lng, lat] of ring) {
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+        }
+      }
+    }
+    return found ? [minLng, minLat, maxLng, maxLat] : null;
+  }
+  return null;
+}
+
+/**
+ * Per-neighborhood daily series for the district markets:
+ *   hoodcit:<KEY> — citations/day inside the district's bounds (one grouped
+ *                   Socrata query per district, bbox in State Plane feet)
+ *   hoodda:<KEY>  — dead-animal reports/day, binned locally from one pull.
+ * Bboxes, not exact polygons — a consistent, cheap stand-in that prices and
+ * settles identically.
+ */
+export async function runNeighborhoodHistory(days = 420): Promise<{
+  fetched: number;
+  stored: number;
+  errors: number;
+}> {
+  const results = { fetched: 0, stored: 0, errors: 0 };
+  const today = todayPT();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const futureCutoff = `${tomorrow.toISOString().split("T")[0]}T00:00:00.000`;
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceIso = `${since.toISOString().split("T")[0]}T00:00:00.000`;
+
+  const hoods = HOODS.map((h) => ({ ...h, bbox: hoodBbox(h.name) })).filter(
+    (h): h is (typeof HOODS)[number] & { bbox: [number, number, number, number] } => !!h.bbox
+  );
+
+  // Citations: one grouped query per district. The current dataset stores
+  // loc_lat/loc_long as WGS84 degrees in text columns — cast and compare.
+  for (const h of hoods) {
+    try {
+      const [minLng, minLat, maxLng, maxLat] = h.bbox;
+      const params: Record<string, string> = {
+        $select: "date_trunc_ymd(issue_date) AS day, count(1) AS n",
+        $where:
+          `issue_date < '${futureCutoff}' AND issue_date > '${sinceIso}'` +
+          ` AND loc_long::number between ${minLng.toFixed(5)} and ${maxLng.toFixed(5)}` +
+          ` AND loc_lat::number between ${minLat.toFixed(5)} and ${maxLat.toFixed(5)}`,
+        $group: "date_trunc_ymd(issue_date)",
+        $order: "day DESC",
+        $limit: String(days + 10),
+      };
+      if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
+
+      const resp = await axios.get<any[]>("https://data.lacity.org/resource/4f5p-udkv.json", {
+        params,
+        timeout: 120000,
+      });
+      const cleaned = cleanDailyCounts(resp.data ?? [], { today });
+      await upsertMetricDays(`hoodcit:${h.key}`, cleaned);
+      results.fetched += (resp.data ?? []).length;
+      results.stored += cleaned.length;
+    } catch (err) {
+      console.error(`Neighborhood citations error (${h.name}):`, err);
+      results.errors++;
+    }
+  }
+
+  // Dead animals: one pull of all rows, binned locally into district bboxes.
+  try {
+    const params: Record<string, string> = {
+      $where: `lower(type) like '%animal%' AND createddate < '${futureCutoff}' AND createddate > '${sinceIso}'`,
+      $select: "geolocation__latitude__s,geolocation__longitude__s,createddate",
+      $limit: "50000",
+    };
+    if (SOCRATA_APP_TOKEN) params["$$app_token"] = SOCRATA_APP_TOKEN;
+    const resp = await axios.get<any[]>("https://data.lacity.org/resource/2cy6-i7zn.json", {
+      params,
+      timeout: 120000,
+    });
+    const rows = resp.data ?? [];
+    results.fetched += rows.length;
+
+    const counts = new Map<string, Map<string, number>>(); // key → date → n
+    for (const row of rows) {
+      const coord = parseCoord(row.geolocation__latitude__s, row.geolocation__longitude__s);
+      const day = String(row.createddate ?? "").slice(0, 10);
+      if (!coord || !/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+      const [lat, lng] = coord;
+      for (const h of hoods) {
+        const [minLng, minLat, maxLng, maxLat] = h.bbox;
+        if (lng < minLng || lng > maxLng || lat < minLat || lat > maxLat) continue;
+        let m = counts.get(h.key);
+        if (!m) counts.set(h.key, (m = new Map()));
+        m.set(day, (m.get(day) ?? 0) + 1);
+      }
+    }
+    // Days with zero reports are real zeros for these sparse series — fill
+    // the calendar so lines and odds aren't built from busy days only.
+    for (const h of hoods) {
+      const m = counts.get(h.key) ?? new Map<string, number>();
+      const series: { date: string; value: number }[] = [];
+      for (let i = days; i >= 1; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const day = d.toISOString().slice(0, 10);
+        if (day >= today) continue;
+        series.push({ date: day, value: m.get(day) ?? 0 });
+      }
+      await upsertMetricDays(`hoodda:${h.key}`, series);
+      results.stored += series.length;
+    }
+  } catch (err) {
+    console.error("Neighborhood dead-animal error:", err);
+    results.errors++;
   }
 
   return results;
