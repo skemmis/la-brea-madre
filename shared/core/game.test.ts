@@ -192,3 +192,27 @@ test("an undefended hex falls to any legal bid", () => {
   s = tick(s, cfg2, []);
   assert.equal(s.hexes[enemyHex].ownerId, "1");
 });
+
+test("quake events deposit degradation, doubled when exploited", () => {
+  let s = start();
+  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
+  s = tick(s, cfg, [{ h3: CENTER, kind: "quake", magnitude: 10 }]);
+  assert.equal(s.hexes[CENTER].degradation, 10);
+
+  s = applyAction(s, cfg, "1", { type: "setExploit", h3: CENTER, on: true });
+  s = tick(s, cfg, [{ h3: CENTER, kind: "quake", magnitude: 10 }]);
+  // +20 (doubled) +20 exploit-degrade from the stance itself
+  assert.equal(s.hexes[CENTER].degradation, 50);
+});
+
+test("repair clears degradation for an order plus $ per point", () => {
+  let s = start();
+  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
+  s = tick(s, cfg, [{ h3: CENTER, kind: "quake", magnitude: 30 }, { h3: CENTER, kind: "deadAnimal", magnitude: 1 }]);
+  const cash = s.players["1"].crude;
+  const orders = s.players["1"].workOrders;
+  s = applyAction(s, cfg, "1", { type: "repair", h3: CENTER });
+  assert.equal(s.hexes[CENTER].degradation, 0);
+  assert.equal(s.players["1"].crude, cash - 30 * cfg.quake.repairPerPoint);
+  assert.equal(s.players["1"].workOrders, orders - 1);
+});

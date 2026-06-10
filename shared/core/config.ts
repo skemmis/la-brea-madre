@@ -39,6 +39,10 @@ export function defaultConfig(
       minBid: 50,
       loserRefund: 0.5,
     },
+    quake: {
+      repairPerPoint: 2, // a fully wrecked parcel costs $200 to fix
+      exploitedDamageMult: 2,
+    },
     market: {
       liquidity: 1000,
       payoutPerShare: 1,

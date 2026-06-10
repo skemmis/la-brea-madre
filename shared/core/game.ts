@@ -137,6 +137,14 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
     }
   }
 
+  // Repair: clear a shaken parcel's degradation (1 order + $ per point).
+  for (const h of mine) {
+    const hx = hexState(state, h);
+    if (hx.degradation > 0 && player.crude >= hx.degradation * config.quake.repairPerPoint) {
+      actions.push({ type: "repair", h3: h });
+    }
+  }
+
   // Acquire relic: any not-yet-owned relic you can afford.
   if (player.crude >= config.costs.relic) {
     for (const id of Object.keys(RELICS)) {
@@ -245,6 +253,14 @@ export function applyAction(
       break;
     }
 
+    case "repair": {
+      const hx = ensureHex(action.h3);
+      player.crude -= hx.degradation * config.quake.repairPerPoint;
+      player.workOrders -= 1;
+      hx.degradation = 0;
+      break;
+    }
+
     case "defend": {
       const c = next.contests?.[action.h3];
       if (!c || c.defenderId !== playerId) throw new Error("No contest to defend there.");
@@ -323,6 +339,17 @@ export function tick(
       0,
       Math.floor(base * upgradeMult * exploitMult * degradeFactor * relicMult) + relicBonus
     );
+
+    // The Madre stirs: quake events deposit degradation, doubled on
+    // exploited parcels — she remembers who's been pumping.
+    const quakeDamage = hexEvents
+      .filter((e) => e.kind === "quake")
+      .reduce((a, e) => a + e.magnitude, 0);
+    if (quakeDamage > 0) {
+      const mult = hx.exploited ? config.quake.exploitedDamageMult : 1;
+      hx.degradation = Math.min(100, hx.degradation + Math.round(quakeDamage * mult));
+      notes.push("the Madre stirred");
+    }
 
     // The city dispatches you: carrion in your territory becomes Work Orders.
     const carrion = hexEvents

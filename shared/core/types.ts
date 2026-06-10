@@ -45,6 +45,12 @@ export interface GameConfig {
     minBid: number; // smallest legal war chest
     loserRefund: number; // share of the losing bid returned (0..1)
   };
+  quake: {
+    /** $ per point of degradation to repair a shaken parcel. */
+    repairPerPoint: number;
+    /** Exploited parcels take this multiple of quake damage. */
+    exploitedDamageMult: number;
+  };
   market: {
     liquidity: number; // LMSR `b` — depth + bound on the maker's max loss
     payoutPerShare: number; // crude paid per winning share at resolution
@@ -193,5 +199,6 @@ export type Action =
   | { type: "acquireRelic"; relicId: string } // power up self (1 order + $)
   | { type: "contest"; h3: string; bid: number } // sealed-bid war (1 order + escrow)
   | { type: "defend"; h3: string; bid: number } // counter-commit $ (no order)
+  | { type: "repair"; h3: string } // clear quake degradation (1 order + $)
   | { type: "setExploit"; h3: string; on: boolean } // free stance, costs nothing
   | { type: "pass" };
