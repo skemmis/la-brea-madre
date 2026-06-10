@@ -9,6 +9,7 @@ import {
   newGame,
   addPlayer,
   applyAction,
+  applyActionMut,
   legalActions,
   tick,
   defaultConfig,
@@ -220,4 +221,42 @@ test("a dispatched crew boosts pay for a week, then goes home", () => {
   for (let i = 0; i < cfg.works.crewDays; i++) s = tick(s, cfg, []);
   s = tick(s, cfg, [{ h3: CENTER, kind: "fine", magnitude: 1000 }]);
   assert.equal(s.lastReport!.perPlayer["1"].gained, 1010, "the crew went home");
+});
+
+test("a landless player cannot first-claim someone else's parcel", () => {
+  const cfg2 = defaultConfig(board, ["1", "2"]);
+  let s = newGame(cfg2, 1);
+  s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
+  // Player 2 owns nothing — the free first claim must not steal a deed.
+  assert.throws(
+    () => applyAction(s, cfg2, "2", { type: "expand", h3: CENTER }),
+    /already deeded/
+  );
+  const open = legalActions(s, cfg2, "2")
+    .filter((a) => a.type === "expand")
+    .map((a) => (a as any).h3);
+  assert.ok(!open.includes(CENTER), "owned land is off the first-claim menu");
+});
+
+test("the mutating apply path matches the pure one exactly", () => {
+  const cfg2 = defaultConfig(board, ["1", "2"]);
+  const pure = (() => {
+    let s = newGame(cfg2, 9);
+    s = applyAction(s, cfg2, "1", { type: "expand", h3: CENTER });
+    s = applyAction(s, cfg2, "1", { type: "assess", h3: CENTER, price: 4000 });
+    s = applyAction(s, cfg2, "1", { type: "crew", h3: CENTER });
+    return s;
+  })();
+  const mut = (() => {
+    const s = newGame(cfg2, 9);
+    applyActionMut(s, cfg2, "1", { type: "expand", h3: CENTER });
+    applyActionMut(s, cfg2, "1", { type: "assess", h3: CENTER, price: 4000 });
+    applyActionMut(s, cfg2, "1", { type: "crew", h3: CENTER });
+    return s;
+  })();
+  assert.deepEqual(mut, pure);
+  // A rejected action must leave the mutated state untouched.
+  const before = JSON.stringify(mut);
+  assert.throws(() => applyActionMut(mut, cfg2, "2", { type: "upgrade", h3: CENTER }));
+  assert.equal(JSON.stringify(mut), before, "failed validation mutates nothing");
 });

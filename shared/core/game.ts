@@ -120,11 +120,13 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
   // Everything below spends a Work Order.
   if ((player.workOrders ?? 0) < 1) return actions;
 
-  // Expand: adjacent unowned board hexes (or any board hex for the first
-  // claim). Land is priced at its value — affordability is per parcel.
+  // Expand: adjacent unowned board hexes (or any unowned board hex for the
+  // first claim). Land is priced at its value — affordability is per parcel.
   if (mine.length === 0) {
-    if (config.costs.firstClaimFree || player.crude >= config.costs.claim) {
-      for (const h of Object.keys(config.board)) actions.push({ type: "expand", h3: h });
+    for (const h of Object.keys(config.board)) {
+      if (hexState(state, h).ownerId === null && player.crude >= claimCost(config, 0, h)) {
+        actions.push({ type: "expand", h3: h });
+      }
     }
   } else {
     const frontier = new Set<string>();
@@ -180,35 +182,110 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
   return actions;
 }
 
-function actionsEqual(a: Action, b: Action): boolean {
-  // Prices are free-form — legality is about the parcel, not the number.
-  if (a.type === "assess" && b.type === "assess") return a.h3 === b.h3;
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
 // ─── Apply a single action ──────────────────────────────────────────────────
 
-export function applyAction(
+/**
+ * Validate one proposed action directly — the same rules legalActions encodes,
+ * without enumerating every move on the board. Throws with a reason if the
+ * action is illegal; returns quietly if it may be applied.
+ */
+export function assertLegal(
   state: GameState,
   config: GameConfig,
   playerId: PlayerId,
   action: Action
-): GameState {
-  const legal = legalActions(state, config, playerId);
-  if (!legal.some((a) => actionsEqual(a, action))) {
-    throw new Error(`Illegal action for ${playerId}: ${JSON.stringify(action)}`);
+): void {
+  const player = state.players[playerId];
+  if (!player) throw new Error(`No such player: ${playerId}`);
+  const deny = (why: string): never => {
+    throw new Error(`Illegal action for ${playerId}: ${why}`);
+  };
+
+  if (action.type === "pass") return;
+
+  if (action.type === "assess") {
+    // Free: name your price. The county taxes what you name.
+    if (hexState(state, action.h3).ownerId !== playerId) deny("you can only assess your own parcel");
+    if (!(action.price >= config.assessment.minPrice)) {
+      deny(`assessments start at $${config.assessment.minPrice}`);
+    }
+    return;
   }
 
-  const next = clone(state);
-  const player = next.players[playerId];
-  const ensureHex = (h: string): HexState => (next.hexes[h] ??= { ...DEFAULT_HEX });
+  // Everything below spends a Work Order.
+  if ((player.workOrders ?? 0) < 1) deny("no Work Orders left");
+
+  switch (action.type) {
+    case "expand": {
+      if (!config.board[action.h3]) deny("that parcel is off the county sheet");
+      if (hexState(state, action.h3).ownerId !== null) deny("that parcel is already deeded");
+      const mine = ownedHexes(state, playerId);
+      if (mine.length > 0) {
+        const touches = gridDisk(action.h3, 1).some(
+          (n) => n !== action.h3 && state.hexes[n]?.ownerId === playerId
+        );
+        if (!touches) deny("expansion must touch your territory");
+      }
+      if (player.crude < claimCost(config, mine.length, action.h3)) deny("not enough money");
+      return;
+    }
+    case "upgrade": {
+      const hx = hexState(state, action.h3);
+      if (hx.ownerId !== playerId) deny("not your parcel");
+      if (hx.upgradeLevel >= config.maxUpgrade) deny("already at max upgrade");
+      if (player.crude < config.costs.upgrade[hx.upgradeLevel]) deny("not enough money");
+      return;
+    }
+    case "repair": {
+      const hx = hexState(state, action.h3);
+      if (hx.ownerId !== playerId) deny("not your parcel");
+      if (!(hx.degradation > 0)) deny("nothing to repair");
+      if (player.crude < repairCost(config, action.h3, hx.degradation)) deny("not enough money");
+      return;
+    }
+    case "retrofit": {
+      const hx = hexState(state, action.h3);
+      if (hx.ownerId !== playerId) deny("not your parcel");
+      if (hx.retrofitted) deny("already retrofitted");
+      if (player.crude < Math.round(claimPrice(config, action.h3) * config.works.retrofitCostFraction))
+        deny("not enough money");
+      return;
+    }
+    case "crew": {
+      const hx = hexState(state, action.h3);
+      if (hx.ownerId !== playerId) deny("not your parcel");
+      if ((hx.crewUntilTick ?? 0) > state.tick) deny("a crew is already on site");
+      if (player.crude < config.works.crewCost) deny("not enough money");
+      return;
+    }
+    case "buyout": {
+      const hx = state.hexes[action.h3];
+      if (!hx?.ownerId) deny("nothing deeded there");
+      if (hx.ownerId === playerId) deny("you already own that parcel");
+      if (player.crude < assessedPrice(state, config, action.h3)) {
+        deny("not enough money for that asking price");
+      }
+      return;
+    }
+  }
+}
+
+/** The mutation body — callers must have passed assertLegal first. */
+function applyLegalAction(
+  state: GameState,
+  config: GameConfig,
+  playerId: PlayerId,
+  action: Action
+): void {
+  const player = state.players[playerId];
+  const ensureHex = (h: string): HexState => (state.hexes[h] ??= { ...DEFAULT_HEX });
 
   switch (action.type) {
     case "pass":
       break;
 
     case "expand": {
-      const mine = ownedHexes(next, playerId);
+      const mine = ownedHexes(state, playerId);
       const cost = claimCost(config, mine.length, action.h3);
       player.crude -= cost;
       player.workOrders -= 1;
@@ -227,20 +304,15 @@ export function applyAction(
     }
 
     case "assess": {
-      // Free: name your price. The county taxes what you name.
-      if (!(action.price >= config.assessment.minPrice)) {
-        throw new Error(`Assessments start at $${config.assessment.minPrice}.`);
-      }
-      next.hexes[action.h3].price = Math.round(action.price);
+      state.hexes[action.h3].price = Math.round(action.price);
       break;
     }
 
     case "buyout": {
       // The Harberger handshake: pay the owner their own number, take the deed.
-      const hx = next.hexes[action.h3];
-      const price = assessedPrice(next, config, action.h3);
-      if (player.crude < price) throw new Error("Not enough money for that asking price.");
-      const seller = next.players[hx.ownerId!];
+      const hx = state.hexes[action.h3];
+      const price = assessedPrice(state, config, action.h3);
+      const seller = state.players[hx.ownerId!];
       player.crude -= price;
       player.workOrders -= 1;
       if (seller) seller.crude += price;
@@ -269,12 +341,37 @@ export function applyAction(
       const hx = ensureHex(action.h3);
       player.crude -= config.works.crewCost;
       player.workOrders -= 1;
-      hx.crewUntilTick = next.tick + config.works.crewDays;
+      hx.crewUntilTick = state.tick + config.works.crewDays;
       break;
     }
   }
+}
 
+export function applyAction(
+  state: GameState,
+  config: GameConfig,
+  playerId: PlayerId,
+  action: Action
+): GameState {
+  assertLegal(state, config, playerId, action);
+  const next = clone(state);
+  applyLegalAction(next, config, playerId, action);
   return next;
+}
+
+/**
+ * In-place variant for bulk drivers (the sim's hundred-bot days): identical
+ * rules and results, but MUTATES the given state instead of cloning it.
+ * Validation happens before any mutation, so a throw leaves state untouched.
+ */
+export function applyActionMut(
+  state: GameState,
+  config: GameConfig,
+  playerId: PlayerId,
+  action: Action
+): void {
+  assertLegal(state, config, playerId, action);
+  applyLegalAction(state, config, playerId, action);
 }
 
 // ─── Tick: resolve one day ────────────────────────────────────────────────────
@@ -365,11 +462,15 @@ export function tick(
   // The county collects: daily tax on every parcel's self-assessed price.
   // Can't pay? The county takes parcels for back taxes, cheapest first.
   const rate = config.assessment.taxRate;
+  const ownedBy = new Map<PlayerId, { h3: string; hx: HexState; price: number }[]>();
+  for (const [h3, hx] of Object.entries(next.hexes)) {
+    if (!hx.ownerId) continue;
+    if (!ownedBy.has(hx.ownerId)) ownedBy.set(hx.ownerId, []);
+    ownedBy.get(hx.ownerId)!.push({ h3, hx, price: hx.price ?? claimPrice(config, h3) });
+  }
   for (const [id, player] of Object.entries(next.players)) {
-    const owned = Object.entries(next.hexes)
-      .filter(([, hx]) => hx.ownerId === id)
-      .map(([h3, hx]) => ({ h3, hx, price: hx.price ?? claimPrice(config, h3) }));
-    if (!owned.length) continue;
+    const owned = ownedBy.get(id);
+    if (!owned?.length) continue;
 
     let tax = Math.round(owned.reduce((a, o) => a + o.price, 0) * rate);
     if (player.crude >= tax) {
