@@ -9,6 +9,8 @@ export interface BoardHex {
   wells: number;
   /** Expected ticket $/day — the land's value, set by the shell from records. */
   fineRate?: number;
+  /** Expected dead-animal reports/day — carrion terrain, from city records. */
+  carrionRate?: number;
 }
 
 export interface GameConfig {
@@ -68,6 +70,34 @@ export interface GameConfig {
     liquidity: number; // LMSR `b` — depth + bound on the maker's max loss
     payoutPerShare: number; // crude paid per winning share at resolution
   };
+  raids: {
+    /** When true, raids replace buyouts as the way land changes hands. */
+    enabled: boolean;
+    /** A winning raider pays the loser this fraction of their own asking price. */
+    compFraction: number;
+    /** A losing raider forfeits this fraction of the asking price to the defender. */
+    stakeFraction: number;
+    /** Cards drawn per side per battle. */
+    battleSize: number;
+    /** Binder cap — the whole standing army, defense and offense alike. */
+    collectionCap: number;
+    /** Cards a brand-new player starts with. */
+    starterCards: number;
+    /** Beaten cards rest this many days (0 = everyone reports back at dawn). */
+    beatenRestDays: number;
+    /** When true, beaten cards are destroyed outright. */
+    burnBeaten: boolean;
+    /** A hex is MACHINE terrain at or above this ticket $/day. */
+    machineTerrainFine: number;
+    /** A hex is CARRION terrain at or above this dead-animal rate/day. */
+    carrionTerrainRate: number;
+  };
+  packs: {
+    /** Scrip per pack — scrip is minted only by winning market settlements. */
+    cost: number;
+    /** Cards per pack. */
+    size: number;
+  };
 }
 
 /**
@@ -108,6 +138,27 @@ export interface PlayerState {
   workOrders: number;
   /** @deprecated pre-WorkOrder daily-action marker; kept for old saves. */
   actionUsedTick: number;
+  /** The binder: every card owned, fighting and resting alike (raids layer). */
+  binder?: BinderCard[];
+  /** Oracle scrip — pack money, minted only by winning market settlements. */
+  scrip?: number;
+}
+
+/** One owned copy of a card. `def` is a catalog id (cards.ts). */
+export interface BinderCard {
+  def: string;
+  /** Resting after a beating until this tick (beatenRestDays regimes). */
+  restUntil?: number;
+}
+
+/** A raid declared today, resolving at tonight's tick. Escrow already paid. */
+export interface PendingRaid {
+  h3: string;
+  attackerId: PlayerId;
+  /** compFraction × asking price, held until the battle resolves. */
+  escrow: number;
+  /** stakeFraction × asking price — forfeited to the defender on a loss. */
+  stake: number;
 }
 
 export interface DispatchEntry {
@@ -125,6 +176,23 @@ export interface TickReport {
   >;
   /** Parcels the county took for back taxes this tick. */
   foreclosures: { h3: string; ownerId: PlayerId }[];
+  /** Tonight's raids, resolved in declaration order. */
+  raids?: RaidReport[];
+}
+
+/** One resolved raid — the morning bulletin's raw material. */
+export interface RaidReport {
+  h3: string;
+  attackerId: PlayerId;
+  defenderId: PlayerId;
+  attackerWon: boolean;
+  attackerLanes: number;
+  defenderLanes: number;
+  /** Cards each side actually fielded (a drained binder fights on scraps). */
+  attackerCards: number;
+  defenderCards: number;
+  /** $ that changed hands: comp to the loser of the land, or stake to the defender. */
+  paid: number;
 }
 
 // ─── Prediction markets (the first surface) ────────────────────────────────────
@@ -181,6 +249,8 @@ export interface GameState {
   contests?: Record<string, unknown>;
   /** Bumped when balances are rescaled (v2 = dollars). */
   economyVersion?: number;
+  /** Raids declared today, awaiting tonight's resolution. */
+  pendingRaids?: PendingRaid[];
   /** The most recent tick's dispatch — the "what happened overnight" reveal. */
   lastReport: TickReport | null;
   /** Open + resolved prediction markets, keyed by id. */
@@ -199,4 +269,5 @@ export type Action =
   | { type: "crew"; h3: string } // dispatch a work crew: +pay for a week (1 order + $)
   | { type: "assess"; h3: string; price: number } // set your parcel's price (free)
   | { type: "buyout"; h3: string } // buy any parcel at its assessed price (1 order)
+  | { type: "raid"; h3: string } // challenge a deed by deck-fight tonight (1 order + escrow)
   | { type: "pass" };

@@ -53,6 +53,22 @@ export function defaultConfig(
       liquidity: 1000,
       payoutPerShare: 1,
     },
+    raids: {
+      enabled: false, // prod keeps buyouts until the deck layer ships
+      compFraction: 0.5, // winning a raid still pays the loser half their ask
+      stakeFraction: 0.25, // losing one donates a quarter of the ask to the defender
+      battleSize: 5,
+      collectionCap: 50, // ten full defenses a night, then the walls are bare
+      starterCards: 15,
+      beatenRestDays: 0,
+      burnBeaten: false,
+      machineTerrainFine: 300,
+      carrionTerrainRate: 0.03,
+    },
+    packs: {
+      cost: 100, // scrip — minted only by winning settlements at the Oracle
+      size: 5,
+    },
     ...overrides,
   };
 }

@@ -9,10 +9,12 @@
  * (h3-js is used purely for hex adjacency — deterministic geometry, no IO.)
  */
 import { gridDisk } from "h3-js";
-import { makeRng } from "./rng";
+import { makeRng, nextFloat } from "./rng";
+import { CARD_BY_ID, openPack, starterBinder } from "./cards";
+import { resolveBattle, type Terrain } from "./battle";
 import type {
   Action,
-  DispatchEntry,
+  BinderCard,
   GameConfig,
   GameEvent,
   GameState,
@@ -69,25 +71,31 @@ export function assessedPrice(state: GameState, config: GameConfig, h3: string):
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
 export function newGame(config: GameConfig, seed: number): GameState {
-  const players: GameState["players"] = {};
-  for (const id of config.players) {
-    players[id] = {
-      id,
-      crude: config.startingCrude,
-      workOrders: config.workOrders.starting,
-      actionUsedTick: -1,
-    };
-  }
-  return {
+  const state: GameState = {
     seed,
     rng: makeRng(seed),
     tick: 0,
-    players,
+    players: {},
     hexes: {},
     lastReport: null,
     markets: {},
     lastSettlement: null,
   };
+  for (const id of config.players) {
+    state.players[id] = {
+      id,
+      crude: config.startingCrude,
+      workOrders: config.workOrders.starting,
+      actionUsedTick: -1,
+      ...(config.raids.enabled
+        ? {
+            binder: starterBinder(state.rng, config.raids.starterCards).map((def) => ({ def })),
+            scrip: 0,
+          }
+        : {}),
+    };
+  }
+  return state;
 }
 
 /** Add a player to an existing game (a mid-season join). No-op if present. */
@@ -99,6 +107,12 @@ export function addPlayer(state: GameState, config: GameConfig, playerId: Player
     crude: config.startingCrude,
     workOrders: config.workOrders.starting,
     actionUsedTick: -1,
+    ...(config.raids.enabled
+      ? {
+          binder: starterBinder(next.rng, config.raids.starterCards).map((def) => ({ def })),
+          scrip: 0,
+        }
+      : {}),
   };
   return next;
 }
@@ -172,10 +186,23 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
     }
   }
 
-  // Buyout: any other player's parcel, at the owner's own asking price.
-  for (const [h3, hx] of Object.entries(state.hexes)) {
-    if (hx.ownerId && hx.ownerId !== playerId && player.crude >= assessedPrice(state, config, h3)) {
-      actions.push({ type: "buyout", h3 });
+  if (config.raids.enabled) {
+    // Raid: challenge any other player's deed to tonight's deck-fight.
+    for (const [h3, hx] of Object.entries(state.hexes)) {
+      if (
+        hx.ownerId &&
+        hx.ownerId !== playerId &&
+        player.crude >= Math.round(assessedPrice(state, config, h3) * config.raids.compFraction)
+      ) {
+        actions.push({ type: "raid", h3 });
+      }
+    }
+  } else {
+    // Buyout: any other player's parcel, at the owner's own asking price.
+    for (const [h3, hx] of Object.entries(state.hexes)) {
+      if (hx.ownerId && hx.ownerId !== playerId && player.crude >= assessedPrice(state, config, h3)) {
+        actions.push({ type: "buyout", h3 });
+      }
     }
   }
 
@@ -259,12 +286,22 @@ export function assertLegal(
       return;
     }
     case "buyout": {
+      if (config.raids.enabled) deny("deeds change hands by raid now — the buyout window is closed");
       const hx = state.hexes[action.h3];
       if (!hx?.ownerId) deny("nothing deeded there");
       if (hx.ownerId === playerId) deny("you already own that parcel");
       if (player.crude < assessedPrice(state, config, action.h3)) {
         deny("not enough money for that asking price");
       }
+      return;
+    }
+    case "raid": {
+      if (!config.raids.enabled) deny("raids are not open in this game");
+      const hx = state.hexes[action.h3];
+      if (!hx?.ownerId) deny("nothing deeded there");
+      if (hx.ownerId === playerId) deny("you already own that parcel");
+      const escrow = Math.round(assessedPrice(state, config, action.h3) * config.raids.compFraction);
+      if (player.crude < escrow) deny("not enough money to post the raid escrow");
       return;
     }
   }
@@ -342,6 +379,22 @@ function applyLegalAction(
       player.crude -= config.works.crewCost;
       player.workOrders -= 1;
       hx.crewUntilTick = state.tick + config.works.crewDays;
+      break;
+    }
+
+    case "raid": {
+      // Post escrow now; the battle happens at tonight's tick.
+      const ask = assessedPrice(state, config, action.h3);
+      const escrow = Math.round(ask * config.raids.compFraction);
+      player.crude -= escrow;
+      player.workOrders -= 1;
+      state.pendingRaids ??= [];
+      state.pendingRaids.push({
+        h3: action.h3,
+        attackerId: playerId,
+        escrow,
+        stake: Math.round(ask * config.raids.stakeFraction),
+      });
       break;
     }
   }
@@ -491,9 +544,165 @@ export function tick(
     report.perPlayer[id].taxPaid = due;
   }
 
+  // The night's raids: every challenged deed is decided by deck-fight.
+  if (config.raids.enabled) resolveNightRaids(next, config, report);
+
   next.tick += 1;
   next.lastReport = report;
   return next;
+}
+
+// ─── Raids: the deck-fight layer ──────────────────────────────────────────────
+
+/** What the ground favors: real ticket money, real carrion, unrepaired damage. */
+export function terrainOf(config: GameConfig, state: GameState, h3: string): Terrain {
+  const cell = config.board[h3];
+  return {
+    machine: (cell?.fineRate ?? 0) >= config.raids.machineTerrainFine,
+    carrion: (cell?.carrionRate ?? 0) >= config.raids.carrionTerrainRate,
+    tremor: (state.hexes[h3]?.degradation ?? 0) > 0,
+  };
+}
+
+/**
+ * Resolve tonight's raids in declaration order. Each player has ONE shuffled
+ * binder for the whole night — every battle they fight (attacking or
+ * defending) draws from it without replacement. Run out, and the late
+ * battles are fought on scraps. This is the finite-army rule: a wide empire
+ * can fully defend collectionCap/battleSize fronts, and no more.
+ */
+function resolveNightRaids(next: GameState, config: GameConfig, report: TickReport): void {
+  const raids = next.pendingRaids ?? [];
+  if (!raids.length) return;
+  next.pendingRaids = [];
+  report.raids = [];
+
+  // Each player's night pool: rested binder indices, shuffled once.
+  const pools = new Map<PlayerId, number[]>();
+  const poolOf = (id: PlayerId): number[] => {
+    let pool = pools.get(id);
+    if (!pool) {
+      const binder = next.players[id]?.binder ?? [];
+      pool = [];
+      for (let i = 0; i < binder.length; i++) {
+        if ((binder[i].restUntil ?? 0) <= next.tick) pool.push(i);
+      }
+      // Fisher–Yates on the game's own RNG — the draw is the dice.
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(nextFloat(next.rng) * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      pools.set(id, pool);
+    }
+    return pool;
+  };
+  const draw = (id: PlayerId): number[] => poolOf(id).splice(0, config.raids.battleSize);
+
+  // Beaten cards' fates are settled after the whole night (stable indices).
+  const toRest: { id: PlayerId; idx: number }[] = [];
+  const toBurn = new Map<PlayerId, Set<number>>();
+  const burnSet = (id: PlayerId): Set<number> => {
+    let s = toBurn.get(id);
+    if (!s) {
+      s = new Set();
+      toBurn.set(id, s);
+    }
+    return s;
+  };
+
+  for (const raid of raids) {
+    const attacker = next.players[raid.attackerId];
+    if (!attacker) continue;
+    const hx = next.hexes[raid.h3];
+    const defenderId = hx?.ownerId;
+    if (!defenderId || defenderId === raid.attackerId) {
+      // Moot by nightfall (foreclosed, or won by this raider's earlier raid).
+      attacker.crude += raid.escrow;
+      continue;
+    }
+    const defender = next.players[defenderId];
+
+    const aIdx = draw(raid.attackerId);
+    const dIdx = draw(defenderId);
+    const aHand = aIdx.map((i) => CARD_BY_ID[attacker.binder![i].def]).filter(Boolean);
+    const dHand = dIdx.map((i) => CARD_BY_ID[defender?.binder?.[i]?.def ?? ""]).filter(Boolean);
+    const result = resolveBattle(aHand, dHand, terrainOf(config, next, raid.h3), config.raids.battleSize);
+
+    // Beaten cards (phoenixes excluded by the resolver's lane bookkeeping).
+    for (let lane = 0; lane < result.lanes.length; lane++) {
+      const r = result.lanes[lane];
+      const aBeaten = r.attacker && (r.sunk || r.winner === "defender") && r.attacker.rite?.kind !== "phoenix";
+      const dBeaten = r.defender && (r.sunk || r.winner === "attacker") && r.defender.rite?.kind !== "phoenix";
+      if (aBeaten && aIdx[lane] !== undefined) {
+        if (config.raids.burnBeaten) burnSet(raid.attackerId).add(aIdx[lane]);
+        else if (config.raids.beatenRestDays > 0) toRest.push({ id: raid.attackerId, idx: aIdx[lane] });
+      }
+      if (dBeaten && dIdx[lane] !== undefined) {
+        if (config.raids.burnBeaten) burnSet(defenderId).add(dIdx[lane]);
+        else if (config.raids.beatenRestDays > 0) toRest.push({ id: defenderId, idx: dIdx[lane] });
+      }
+    }
+
+    let paid: number;
+    if (result.winner === "attacker") {
+      // The deed falls; the loser is paid their own number (half of it).
+      hx.ownerId = raid.attackerId;
+      if (defender) defender.crude += raid.escrow;
+      paid = raid.escrow;
+    } else {
+      // The walls held: the stake stays with the defender, the rest comes home.
+      if (defender) defender.crude += raid.stake;
+      attacker.crude += raid.escrow - raid.stake;
+      paid = raid.stake;
+    }
+
+    report.raids.push({
+      h3: raid.h3,
+      attackerId: raid.attackerId,
+      defenderId,
+      attackerWon: result.winner === "attacker",
+      attackerLanes: result.attackerLanes,
+      defenderLanes: result.defenderLanes,
+      attackerCards: aHand.length,
+      defenderCards: dHand.length,
+      paid,
+    });
+  }
+
+  // Dawn: the beaten rest or burn.
+  for (const { id, idx } of toRest) {
+    const b = next.players[id]?.binder?.[idx];
+    if (b) b.restUntil = next.tick + 1 + config.raids.beatenRestDays;
+  }
+  for (const [id, dead] of toBurn) {
+    const p = next.players[id];
+    if (p?.binder) p.binder = p.binder.filter((_, i) => !dead.has(i));
+  }
+}
+
+/**
+ * Rip a pack: spend scrip, add `packs.size` cards to the binder (mutating).
+ * Scrip is minted only by the Oracle — winning settlements pay it out.
+ */
+export function buyPackMut(state: GameState, config: GameConfig, playerId: PlayerId): string[] {
+  const player = state.players[playerId];
+  if (!player) throw new Error(`No such player: ${playerId}`);
+  if ((player.scrip ?? 0) < config.packs.cost) throw new Error("Not enough scrip.");
+  player.binder ??= [];
+  if (player.binder.length + config.packs.size > config.raids.collectionCap) {
+    throw new Error("No room in the binder — cut cards first.");
+  }
+  player.scrip = (player.scrip ?? 0) - config.packs.cost;
+  const pulls = openPack(state.rng, config.packs.size);
+  for (const def of pulls) player.binder.push({ def });
+  return pulls;
+}
+
+/** Cut a card from the binder (mutating) — making room is free, regret isn't. */
+export function cutCardMut(state: GameState, playerId: PlayerId, index: number): BinderCard {
+  const binder = state.players[playerId]?.binder;
+  if (!binder || index < 0 || index >= binder.length) throw new Error("No such card.");
+  return binder.splice(index, 1)[0];
 }
 
 // ─── Terminal state / scoring ──────────────────────────────────────────────────
