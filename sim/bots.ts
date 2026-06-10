@@ -78,6 +78,16 @@ function bestUnowned(ctx: BotCtx, ranked: string[]): string | null {
 
 const fineOf = (ctx: BotCtx, h: string) => ctx.world.fineRate.get(h) ?? 0;
 
+/** What taking a parcel costs up front: the full ask, or the raid escrow. */
+function takingCost(ctx: BotCtx, ask: number): number {
+  return ctx.config.raids.enabled ? Math.round(ask * ctx.config.raids.compFraction) : ask;
+}
+
+/** The action that takes someone's parcel under the current rules. */
+function takeAction(ctx: BotCtx, h3: string): Action {
+  return ctx.config.raids.enabled ? { type: "raid", h3 } : { type: "buyout", h3 };
+}
+
 /** Another player's parcel whose asking price most undershoots its worth. */
 function bestBargain(ctx: BotCtx, discount = 0.7): string | null {
   let bestH: string | null = null;
@@ -87,7 +97,7 @@ function bestBargain(ctx: BotCtx, discount = 0.7): string | null {
     const fair = claimPrice(ctx.config, h3) * (1 + (ctx.config.yield.upgradeBonus[hx.upgradeLevel] ?? 0));
     if (fair <= ctx.config.assessment.minPrice) continue;
     const ask = assessedPrice(ctx.state, ctx.config, h3);
-    if (ask > cash(ctx.state, ctx.me)) continue;
+    if (takingCost(ctx, ask) > cash(ctx.state, ctx.me)) continue;
     const ratio = ask / fair;
     if (ratio < bestRatio) {
       bestRatio = ratio;
@@ -221,9 +231,9 @@ export function flipper(): Bot {
       // Mark acquisitions up to a fat ask immediately.
       const reprice = worstSelfPricing(ctx, owned, 1.5);
       if (reprice) return { type: "assess", h3: reprice.h3, price: reprice.price };
-      // Hunt mispriced land anywhere on the map.
+      // Hunt mispriced land anywhere on the map (by checkbook or by deck).
       const bargain = bestBargain(ctx, 0.75);
-      if (bargain) return { type: "buyout", h3: bargain };
+      if (bargain) return takeAction(ctx, bargain);
       // Nothing cheap on the board: grow normally.
       const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
@@ -263,11 +273,51 @@ export function drifter(): Bot {
       );
       if (enemies.length) {
         const [h3] = enemies[Math.floor(ctx.rng() * enemies.length)];
-        if (cash(ctx.state, ctx.me) >= assessedPrice(ctx.state, ctx.config, h3)) {
-          return { type: "buyout", h3 };
+        if (cash(ctx.state, ctx.me) >= takingCost(ctx, assessedPrice(ctx.state, ctx.config, h3))) {
+          return takeAction(ctx, h3);
         }
       }
       return null;
+    },
+  };
+}
+
+/**
+ * The warlord exists to stress the finite army: every order goes into raids
+ * on the single biggest landowner's cheapest parcels — many fronts, one
+ * night. If wide empires don't bleed under this, the rule isn't working.
+ */
+export function warlord(): Bot {
+  return {
+    name: "warlord",
+    nextAction(ctx) {
+      const owned = mine(ctx.state, ctx.me);
+      if (orders(ctx.state, ctx.me) < 1) return null;
+      if (!owned.length) {
+        const h = bestUnowned(ctx, ctx.world.byFine);
+        return h ? { type: "expand", h3: h } : null;
+      }
+      if (!ctx.config.raids.enabled) return null; // pacifist without a battlefield
+
+      // Find the widest empire that isn't mine.
+      const holdings = new Map<string, string[]>();
+      for (const [h3, hx] of Object.entries(ctx.state.hexes)) {
+        if (!hx.ownerId || hx.ownerId === ctx.me) continue;
+        if (!holdings.has(hx.ownerId)) holdings.set(hx.ownerId, []);
+        holdings.get(hx.ownerId)!.push(h3);
+      }
+      let target: string[] | null = null;
+      for (const parcels of holdings.values()) {
+        if (!target || parcels.length > target.length) target = parcels;
+      }
+      if (!target || target.length < 5) return null; // no empire worth besieging
+
+      // Hit their cheapest affordable front — quantity over quality.
+      const affordable = target.filter(
+        (h) => takingCost(ctx, assessedPrice(ctx.state, ctx.config, h)) <= cash(ctx.state, ctx.me)
+      );
+      const cheapest = best(affordable, (h) => -assessedPrice(ctx.state, ctx.config, h));
+      return cheapest ? { type: "raid", h3: cheapest } : null;
     },
   };
 }
@@ -278,4 +328,5 @@ export const PERSONAS: Record<string, () => Bot> = {
   sprawler,
   flipper,
   drifter,
+  warlord,
 };

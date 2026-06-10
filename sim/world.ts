@@ -67,7 +67,7 @@ function indexWorld(cells: FixtureCell[]): SimWorld {
   const fineRate = new Map<string, number>();
   const carrionRate = new Map<string, number>();
   for (const c of cells) {
-    board[c.h] = { wells: 0, fineRate: c.f ?? 0 };
+    board[c.h] = { wells: 0, fineRate: c.f ?? 0, carrionRate: c.c ?? 0 };
     if (c.f) fineRate.set(c.h, c.f);
     if (c.c) carrionRate.set(c.h, c.c);
   }

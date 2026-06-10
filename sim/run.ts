@@ -26,6 +26,7 @@ import {
 import { loadLaWorld, syntheticWorld, sampleEvents, sampleQuakes, makeRng, type SimWorld } from "./world";
 import { PERSONAS, type Bot, type BotCtx } from "./bots";
 import { makeAlliances, runAllianceDay, allianceReport, type Alliance } from "./alliances";
+import { manageBinder, type CurationStyle } from "./decks";
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -39,17 +40,45 @@ const SEED = parseInt(arg("seed", "7"), 10);
 const WORLD = arg("world", "la");
 const N = parseInt(arg("n", "0"), 10); // population size; 0 = the classic six
 const ALLIANCES = parseInt(arg("alliances", "0"), 10);
+const RAIDS = process.argv.includes("--raids");
 const BOTS = arg("bots", "rentier,scavenger,sprawler,flipper,drifter").split(",");
 const MAX_ACTIONS_PER_DAY = 8;
 
 /** A 100-player city is mostly ordinary landlords, with a criminal fringe. */
-const POPULATION_MIX: [string, number][] = [
-  ["rentier", 0.3],
-  ["scavenger", 0.2],
-  ["sprawler", 0.2],
-  ["flipper", 0.15],
-  ["drifter", 0.15],
-];
+const POPULATION_MIX: [string, number][] = RAIDS
+  ? [
+      ["rentier", 0.25],
+      ["scavenger", 0.2],
+      ["sprawler", 0.2],
+      ["flipper", 0.15],
+      ["drifter", 0.1],
+      ["warlord", 0.1],
+    ]
+  : [
+      ["rentier", 0.3],
+      ["scavenger", 0.2],
+      ["sprawler", 0.2],
+      ["flipper", 0.15],
+      ["drifter", 0.15],
+    ];
+
+/** Oracle form (scrip/day) and binder taste, by persona. */
+const ORACLE_SKILL: Record<string, number> = {
+  rentier: 25,
+  flipper: 20,
+  warlord: 18,
+  scavenger: 10,
+  sprawler: 8,
+  drifter: 5,
+};
+const CURATION: Record<string, CurationStyle> = {
+  rentier: "balanced",
+  flipper: "power",
+  warlord: "power",
+  scavenger: "swarm",
+  sprawler: "balanced",
+  drifter: "random",
+};
 
 function buildPopulation(): { bots: Bot[]; personaOf: string[] } {
   if (N > 0) {
@@ -113,6 +142,12 @@ interface BotTally {
   foreclosures: number;
   quakeDamageTaken: number;
   repairsSpent: number;
+  raidsWon: number; // as attacker
+  raidsLost: number; // as attacker
+  defensesHeld: number;
+  deedsLostToRaids: number;
+  scrapsDefenses: number; // defended with fewer than battleSize cards
+  packsRipped: number;
 }
 
 function gini(values: number[]): number {
@@ -139,8 +174,10 @@ async function main() {
 
   const { bots, personaOf } = buildPopulation();
   const ids = bots.map((_, i) => String(i + 1));
-  const config = defaultConfig(world.board, ids);
+  const base = defaultConfig(world.board, ids);
+  const config = RAIDS ? { ...base, raids: { ...base.raids, enabled: true } } : base;
   let state = newGame(config, SEED);
+  const personaName = (i: number): string => personaOf[i].split("-")[0];
   const alliances: Alliance[] = ALLIANCES > 0 ? makeAlliances(ALLIANCES, ids) : [];
   const allied = new Set(alliances.flatMap((a) => a.members));
 
@@ -156,6 +193,12 @@ async function main() {
       foreclosures: 0,
       quakeDamageTaken: 0,
       repairsSpent: 0,
+      raidsWon: 0,
+      raidsLost: 0,
+      defensesHeld: 0,
+      deedsLostToRaids: 0,
+      scrapsDefenses: 0,
+      packsRipped: 0,
     };
 
   const daily: BotStats[][] = [];
@@ -169,6 +212,18 @@ async function main() {
 
   const t0 = Date.now();
   for (let day = 0; day < DAYS; day++) {
+    // ── The Oracle pays out; binders get curated before the day's business ──
+    if (RAIDS) {
+      for (let i = 0; i < ids.length; i++) {
+        const p = state.players[ids[i]];
+        const skill = ORACLE_SKILL[personaName(i)] ?? 5;
+        p.scrip = (p.scrip ?? 0) + Math.round(skill * (0.5 + rng()));
+        const before = Math.floor((p.scrip ?? 0) / config.packs.cost);
+        manageBinder(state, config, ids[i], CURATION[personaName(i)] ?? "random", rng);
+        tallies[ids[i]].packsRipped += before;
+      }
+    }
+
     // ── Action phase (rotating start order so nobody owns the morning) ──
     const order = ids.map((_, i) => (i + day) % ids.length);
     for (const idx of order) {
@@ -215,6 +270,22 @@ async function main() {
     for (const id of ids) tallies[id].taxPaid += state.lastReport?.perPlayer[id]?.taxPaid ?? 0;
     for (const f of state.lastReport?.foreclosures ?? []) {
       if (tallies[f.ownerId]) tallies[f.ownerId].foreclosures++;
+    }
+    for (const r of state.lastReport?.raids ?? []) {
+      const att = tallies[r.attackerId];
+      const def = tallies[r.defenderId];
+      if (att) r.attackerWon ? att.raidsWon++ : att.raidsLost++;
+      if (def) {
+        r.attackerWon ? def.deedsLostToRaids++ : def.defensesHeld++;
+        if (r.defenderCards < config.raids.battleSize) def.scrapsDefenses++;
+      }
+    }
+    if (RAIDS) {
+      for (const id of ids) {
+        const n = state.players[id].binder?.length ?? 0;
+        if (n > config.raids.collectionCap)
+          throw new Error(`day ${day}: ${id} binder over the cap (${n})`);
+      }
     }
 
     const parcelCount: Record<string, number> = {};
@@ -314,6 +385,27 @@ async function main() {
   console.log(`parcels claimed: ${totalParcels}   cash gini: ${cashGini.toFixed(2)}   parcel gini: ${parcelGini.toFixed(2)}`);
   console.log(`quake damage dealt: ${Math.round(quakeDmg)} pts   repair $ spent: ${Math.round(repairs)}`);
   console.log(`county tax collected: $${Math.round(totalTax)}   forced-sale volume: $${Math.round(totalSales)}`);
+
+  if (RAIDS) {
+    const sum = (f: (t: BotTally) => number) => ids.reduce((a, id) => a + f(tallies[id]), 0);
+    const totalRaids = sum((t) => t.raidsWon + t.raidsLost);
+    console.log("\nRAID THEATER");
+    console.log(
+      `raids fought: ${totalRaids}   attacker win rate: ${totalRaids ? ((100 * sum((t) => t.raidsWon)) / totalRaids).toFixed(1) : "0"}%   ` +
+        `deeds taken by force: ${sum((t) => t.deedsLostToRaids)}   scrap-hand defenses: ${sum((t) => t.scrapsDefenses)}   packs ripped: ${sum((t) => t.packsRipped)}`
+    );
+    console.log("persona      raidsW/L   defHeld  deedsLost  scraps");
+    for (const [persona] of POPULATION_MIX) {
+      const ix = ids.map((_, i) => i).filter((i) => personaName(i) === persona);
+      const t = ix.map((i) => tallies[ids[i]]);
+      const s = (f: (x: BotTally) => number) => t.reduce((a, c) => a + f(c), 0);
+      console.log(
+        `${persona.padEnd(10)} ${String(s((x) => x.raidsWon)).padStart(7)}/${s((x) => x.raidsLost)}` +
+          `${String(s((x) => x.defensesHeld)).padStart(9)} ${String(s((x) => x.deedsLostToRaids)).padStart(10)} ` +
+          `${String(s((x) => x.scrapsDefenses)).padStart(6)}`
+      );
+    }
+  }
 
   if (alliances.length) {
     console.log(allianceReport(state, alliances, ids, allied, last));

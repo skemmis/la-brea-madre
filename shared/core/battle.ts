@@ -25,7 +25,7 @@ export interface Terrain {
 }
 
 export const AFFINITY_BONUS = 2;
-export const COUNTER_BONUS = 2;
+export const COUNTER_BONUS = 3;
 
 export interface LaneResult {
   attacker: CardDef | null;

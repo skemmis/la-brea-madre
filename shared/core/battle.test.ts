@@ -52,10 +52,10 @@ test("higher power takes the lane; most lanes takes the battle; ties defend", ()
   assert.equal(tie.winner, "defender", "equal power defends the deed");
 });
 
-test("the counter triangle and home ground both pay +2", () => {
-  // Carrion 1 vs machine 1: possum gets +2 counter (+1 pack needs friends).
+test("the counter triangle pays +3, home ground +2", () => {
+  // Carrion 1 vs machine 1: possum gets +3 counter (+1 pack needs friends).
   const r = resolveBattle([card("c01")], [card("m01")], NOWHERE, 1);
-  assert.equal(r.lanes[0].attackerPower, 3);
+  assert.equal(r.lanes[0].attackerPower, 4);
   assert.equal(r.lanes[0].defenderPower, 1);
 
   // Same fight on machine ground: the meter holds home turf and surges.
@@ -70,8 +70,8 @@ test("the pack runs together and LA MADRE takes both", () => {
     NOWHERE,
     3
   );
-  // Rats: 2 base + 2 counter(machine) + 2×2 pack = 8 vs THE BOOT 5.
-  assert.equal(swarm.lanes[0].attackerPower, 8);
+  // Rats: 2 base + 3 counter(machine) + 2×2 pack = 9 vs THE BOOT 5.
+  assert.equal(swarm.lanes[0].attackerPower, 9);
 
   const sink = resolveBattle([card("t10")], [card("m10")], NOWHERE, 1);
   assert.equal(sink.lanes[0].winner, "none");
