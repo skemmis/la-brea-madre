@@ -30,6 +30,8 @@ suite("gameService (integration)", () => {
     const { migrate } = await import("drizzle-orm/node-postgres/migrator");
     await migrate(db, { migrationsFolder: "./migrations" });
     await gs.ensureGameStateTable();
+    const { ensureQuakeTable } = await import("./quakeService");
+    await ensureQuakeTable();
   });
 
   beforeEach(async () => {
