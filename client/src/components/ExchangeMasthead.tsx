@@ -7,7 +7,7 @@ import { useActivity } from "../hooks/useExchange";
 const cents = (p: number) => `${Math.round(p * 100)}¢`;
 
 /** The exchange's masthead + the tape: a broadsheet header over a ticker. */
-export default function ExchangeMasthead({ active }: { active: "floor" | "portfolio" }) {
+export default function ExchangeMasthead({ active }: { active: "floor" | "portfolio" | "arena" }) {
   const { user } = useAuth();
   const { data: player } = usePlayer(!!user);
   const { data: tape = [] } = useActivity();
@@ -15,6 +15,7 @@ export default function ExchangeMasthead({ active }: { active: "floor" | "portfo
   const nav = [
     { href: "/", label: "THE FLOOR", key: "floor" },
     { href: "/portfolio", label: "PORTFOLIO", key: "portfolio" },
+    { href: "/arena", label: "ARENA", key: "arena" },
     { href: "/map", label: "MAP", key: "map" },
   ];
 
