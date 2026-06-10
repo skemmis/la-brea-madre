@@ -12,6 +12,7 @@ import {
   legalActions,
   tick,
   defaultConfig,
+  repairCost,
   type BoardHex,
 } from "./index";
 
@@ -135,9 +136,10 @@ test("repair clears degradation for an order plus $ per point", () => {
   s = tick(s, cfg, [{ h3: CENTER, kind: "quake", magnitude: 30 }, { h3: CENTER, kind: "deadAnimal", magnitude: 1 }]);
   const cash = s.players["1"].crude;
   const orders = s.players["1"].workOrders;
+  const bill = repairCost(cfg, CENTER, 30);
   s = applyAction(s, cfg, "1", { type: "repair", h3: CENTER });
   assert.equal(s.hexes[CENTER].degradation, 0);
-  assert.equal(s.players["1"].crude, cash - 30 * cfg.quake.repairPerPoint);
+  assert.equal(s.players["1"].crude, cash - bill);
   assert.equal(s.players["1"].workOrders, orders - 1);
 });
 
@@ -183,4 +185,39 @@ test("foreclosure: the county takes parcels when the tax can't be paid", () => {
   s = tick(s, cfg, []);
   assert.equal(s.hexes[CENTER].ownerId, null, "the county takes it");
   assert.equal(s.lastReport!.foreclosures.length, 1);
+});
+
+test("repair bills scale with the land's value", () => {
+  const rich: Record<string, BoardHex> = { ...board };
+  const poorHex = RING.find((h) => h !== CENTER)!;
+  rich[CENTER] = { wells: 0, fineRate: 5000 }; // prime meter land
+  rich[poorHex] = { wells: 0, fineRate: 0 };
+  const cfg2 = defaultConfig(rich, ["1"]);
+  assert.ok(
+    repairCost(cfg2, CENTER, 20) > repairCost(cfg2, poorHex, 20) * 50,
+    "a wrecked prime corner costs real money; a hillside is a patch job"
+  );
+});
+
+test("retrofit halves quake damage, permanently", () => {
+  let s = start();
+  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
+  s = tick(s, cfg, [{ h3: CENTER, kind: "deadAnimal", magnitude: 1 }]); // earn an order
+  s = applyAction(s, cfg, "1", { type: "retrofit", h3: CENTER });
+  assert.equal(s.hexes[CENTER].retrofitted, true);
+  s = tick(s, cfg, [{ h3: CENTER, kind: "quake", magnitude: 20 }]);
+  assert.equal(s.hexes[CENTER].degradation, 10, "the bolts held");
+});
+
+test("a dispatched crew boosts pay for a week, then goes home", () => {
+  let s = start();
+  s = applyAction(s, cfg, "1", { type: "expand", h3: CENTER });
+  s = applyAction(s, cfg, "1", { type: "crew", h3: CENTER });
+  s = tick(s, cfg, [{ h3: CENTER, kind: "fine", magnitude: 1000 }]);
+  // (1000 + 2 wells × $5) × 1.5 crew = 1515, before the county's tax.
+  assert.equal(s.lastReport!.perPlayer["1"].gained, 1515);
+  // Fast-forward past the crew's stay.
+  for (let i = 0; i < cfg.works.crewDays; i++) s = tick(s, cfg, []);
+  s = tick(s, cfg, [{ h3: CENTER, kind: "fine", magnitude: 1000 }]);
+  assert.equal(s.lastReport!.perPlayer["1"].gained, 1010, "the crew went home");
 });

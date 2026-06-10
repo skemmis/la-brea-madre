@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Zap, ArrowUp, Hammer, Scale, Banknote } from "lucide-react";
+import { X, Zap, ArrowUp, Hammer, Scale, Banknote, Wrench, HardHat } from "lucide-react";
 import type { HexData } from "./HexMap";
 import {
   useClaimHex,
@@ -7,6 +7,8 @@ import {
   useAssessHex,
   useBuyoutHex,
   useRepairHex,
+  useRetrofitHex,
+  useCrewHex,
 } from "../hooks/usePlayer";
 
 interface Props {
@@ -30,6 +32,8 @@ export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, on
   const assess = useAssessHex();
   const buyout = useBuyoutHex();
   const repair = useRepairHex();
+  const retrofit = useRetrofitHex();
+  const crew = useCrewHex();
 
   const isOwned = !!hex.ownerId;
   const isMine = hex.ownerId === viewerUserId;
@@ -88,6 +92,14 @@ export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, on
             value={"▪".repeat(hex.upgradeLevel) + "▫".repeat(3 - hex.upgradeLevel)}
           />
           {isOwned && <Datum label="LAST TICK" value={usd(hex.lastTickYield)} />}
+          {(hex.retrofitted || (hex.crewDaysLeft ?? 0) > 0) && (
+            <div className="col-span-2 flex gap-2 text-[9px] font-bold" style={{ letterSpacing: "0.1em" }}>
+              {hex.retrofitted && <span className="text-[var(--pine)]">⚒ RETROFITTED</span>}
+              {(hex.crewDaysLeft ?? 0) > 0 && (
+                <span className="text-[var(--ink)]">CREW ON SITE · {hex.crewDaysLeft}D LEFT</span>
+              )}
+            </div>
+          )}
           {hex.degradation > 0 && (
             <div className="col-span-2">
               <div className="text-[var(--sepia-soft)] mb-0.5" style={{ letterSpacing: "0.08em" }}>
@@ -179,15 +191,39 @@ export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, on
               </button>
             )}
 
-            {/* Repair quake damage */}
+            {/* Repair quake damage — billed at the land's worth */}
             {isMine && hex.degradation > 0 && hasOrders && (
               <button
                 onClick={() => repair.mutate(hex.h3Index)}
-                disabled={repair.isPending || viewerCash < hex.degradation * 2}
+                disabled={repair.isPending || viewerCash < (hex.repairBill ?? 0)}
                 className="btn-ink w-full flex items-center gap-2 px-3 py-2 text-xs font-bold"
               >
                 <Hammer size={12} />
-                REPAIR — 1 ORDER + {usd(hex.degradation * 2)}
+                REPAIR — 1 ORDER + {usd(hex.repairBill ?? 0)}
+              </button>
+            )}
+
+            {/* Retrofit against the Madre */}
+            {isMine && !hex.retrofitted && hasOrders && (
+              <button
+                onClick={() => retrofit.mutate(hex.h3Index)}
+                disabled={retrofit.isPending || viewerCash < Math.round(claimPriceOf(finePerDay) * 0.05)}
+                className="btn-ink w-full flex items-center gap-2 px-3 py-2 text-xs"
+              >
+                <Wrench size={12} />
+                RETROFIT — 1 ORDER + {usd(Math.round(claimPriceOf(finePerDay) * 0.05))} · ½ QUAKE DAMAGE
+              </button>
+            )}
+
+            {/* Dispatch a crew */}
+            {isMine && (hex.crewDaysLeft ?? 0) === 0 && hasOrders && (
+              <button
+                onClick={() => crew.mutate(hex.h3Index)}
+                disabled={crew.isPending || viewerCash < 250}
+                className="btn-ink w-full flex items-center gap-2 px-3 py-2 text-xs"
+              >
+                <HardHat size={12} />
+                DISPATCH CREW — 1 ORDER + $250 · +50% PAY, 7 DAYS
               </button>
             )}
           </div>

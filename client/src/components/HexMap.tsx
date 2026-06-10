@@ -329,6 +329,9 @@ export interface HexData {
   shakePoints?: number;
   askingPrice?: number;
   dailyTax?: number;
+  repairBill?: number;
+  retrofitted?: boolean;
+  crewDaysLeft?: number;
   deadAnimalPerMonth?: number;
   ownerName?: string;
   ambient: {

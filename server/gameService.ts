@@ -15,6 +15,7 @@ import { hexCells, hexAmbient, citationDaily, users } from "@shared/schema";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import {
   assessedPrice,
+  repairCost,
   newGame,
   addPlayer,
   applyAction,
@@ -304,6 +305,9 @@ export interface MapHex {
   shakePoints: number;
   askingPrice: number;
   dailyTax: number;
+  repairBill: number;
+  retrofitted: boolean;
+  crewDaysLeft: number;
   deadAnimalPerMonth: number;
   ownerName?: string;
   neighborhood: string | null;
@@ -373,6 +377,9 @@ export async function projectMap(): Promise<MapHex[]> {
       dailyTax: hx?.ownerId
         ? Math.round(assessedPrice(state, config, c.h3Index) * config.assessment.taxRate)
         : 0,
+      repairBill: hx?.degradation ? repairCost(config, c.h3Index, hx.degradation) : 0,
+      retrofitted: hx?.retrofitted ?? false,
+      crewDaysLeft: Math.max(0, (hx?.crewUntilTick ?? 0) - state.tick),
       // Monthly rate: res-9 cells are small enough that a daily rate rounds
       // to 0.0 for almost every cell.
       deadAnimalPerMonth: round1(((c.deadAnimalCount ?? 0) / daWindow) * 30),

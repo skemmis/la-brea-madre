@@ -38,7 +38,16 @@ export function defaultConfig(
       minPrice: 100,
     },
     quake: {
-      repairPerPoint: 2, // a fully wrecked parcel costs $200 to fix
+      // The Madre taxes value: full repair of a wreck ≈ 30% of fair value.
+      repairFraction: 0.003,
+      repairFloorPerPoint: 2,
+    },
+    works: {
+      retrofitCostFraction: 0.05, // bolt down a prime parcel for 5% of its worth
+      retrofitDamageMult: 0.5,
+      crewCost: 250,
+      crewMult: 1.5,
+      crewDays: 7,
     },
     market: {
       liquidity: 1000,

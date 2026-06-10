@@ -37,7 +37,9 @@ strategic tension.
 | Claim   | max($100, 30× its ticket $/day) | Take unowned land at its value. First ever claim: free, anywhere |
 | Buyout  | the owner's asking price | Buy ANY rival parcel at its assessed price — paid to the owner |
 | Upgrade | $200/$400/$800 | Level 1/2/3 — bigger pay multiplier |
-| Repair  | $2 × degradation | Clear quake damage |
+| Repair  | degradation × max($2, 0.3% of fair value) | Clear quake damage — prime land costs real money to fix |
+| Retrofit | 5% of fair value | One-time: this parcel takes half quake damage forever |
+| Crew    | $250 | Dispatch a work crew: +50% pay on one parcel for 7 days |
 
 Free (no order): **Assess** — set your own parcel's price.
 
@@ -45,9 +47,13 @@ Free (no order): **Assess** — set your own parcel's price.
 
 Real USGS earthquakes (polled every 30 minutes, M1.5+ near the basin) deal
 degradation to owned parcels in a heat-map footprint around the epicenter
-(Gaussian falloff; an M2 covers a district, an M3 a region). Degradation cuts income until repaired; repair costs an
-order, and the order bank is capped — so the bigger the empire, the longer its
-shaken edges bleed. The map's Seismic layer shows 30 days of shake heat; the
+(Gaussian falloff; an M2 covers a district, an M3 a region). Degradation cuts
+income until repaired — and the repair bill scales with the land's worth, so
+the Madre is a progressive tax: a wrecked hillside is a patch job, a wrecked
+Koreatown corner is a five-figure reconstruction. Retrofitting (an order + 5%
+of value) permanently halves a parcel's quake damage. Repair costs an order,
+and the order bank is capped — the bigger the empire, the longer its shaken
+edges bleed. The map's Seismic layer shows 30 days of shake heat; the
 seismograph bulletin lists fresh events.
 
 ## The Assessment — every parcel is always for sale

@@ -14,6 +14,7 @@ import { gridDisk } from "h3-js";
 import {
   assessedPrice,
   claimPrice,
+  repairCost,
   type Action,
   type GameConfig,
   type GameState,
@@ -137,8 +138,18 @@ export function rentier(): Bot {
       // Repair anything badly shaken first — protect the income.
       const wounded = owned.filter((h) => (ctx.state.hexes[h].degradation ?? 0) >= 20);
       const worst = best(wounded, (h) => incomeOf(ctx, h));
-      if (worst && cash(ctx.state, ctx.me) >= ctx.state.hexes[worst].degradation * ctx.config.quake.repairPerPoint) {
+      if (worst && cash(ctx.state, ctx.me) >= repairCost(ctx.config, worst, ctx.state.hexes[worst].degradation)) {
         return { type: "repair", h3: worst };
+      }
+      // Bolt down the crown jewel once it's earning.
+      const jewel = best(owned, (h) => fineOf(ctx, h));
+      if (
+        jewel &&
+        !ctx.state.hexes[jewel].retrofitted &&
+        fineOf(ctx, jewel) > 500 &&
+        cash(ctx.state, ctx.me) >= Math.round(claimPrice(ctx.config, jewel) * ctx.config.works.retrofitCostFraction) * 3
+      ) {
+        return { type: "retrofit", h3: jewel };
       }
       // Upgrade the best earner if affordable.
       const upgradable = owned.filter(

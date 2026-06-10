@@ -68,6 +68,32 @@ export function useRepairHex() {
   });
 }
 
+export function useRetrofitHex() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (h3Index: string) =>
+      apiRequest("POST", "/api/territory/retrofit", { h3Index }),
+    onSuccess: () => {
+      invalidateTerritory(qc);
+      toast.success("Bolted down. The Madre will find this one stubborn.");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useCrewHex() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (h3Index: string) =>
+      apiRequest("POST", "/api/territory/crew", { h3Index }),
+    onSuccess: () => {
+      invalidateTerritory(qc);
+      toast.success("Crew dispatched — a week of overtime.");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useAssessHex() {
   const qc = useQueryClient();
   return useMutation({

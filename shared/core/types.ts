@@ -49,8 +49,20 @@ export interface GameConfig {
     minPrice: number;
   };
   quake: {
-    /** $ per point of degradation to repair a shaken parcel. */
-    repairPerPoint: number;
+    /** Repair cost per degradation point: this fraction of the parcel's fair value. */
+    repairFraction: number;
+    /** ...but never below this floor per point. */
+    repairFloorPerPoint: number;
+  };
+  works: {
+    /** Retrofit: one-time cost as a fraction of fair value. */
+    retrofitCostFraction: number;
+    /** Quake damage multiplier on retrofitted parcels. */
+    retrofitDamageMult: number;
+    /** Dispatch a crew: flat cost, pay multiplier, and how long it stays. */
+    crewCost: number;
+    crewMult: number;
+    crewDays: number;
   };
   market: {
     liquidity: number; // LMSR `b` — depth + bound on the maker's max loss
@@ -75,6 +87,10 @@ export interface HexState {
   upgradeLevel: number;
   /** Owner's self-assessed price: anyone may buy at it; tax accrues on it. */
   price?: number;
+  /** Seismic retrofit: this parcel takes half quake damage, permanently. */
+  retrofitted?: boolean;
+  /** A dispatched work crew boosts pay until this tick index. */
+  crewUntilTick?: number;
   /** @deprecated the exploit stance is gone; kept so old saves parse. */
   exploited?: boolean;
   degradation: number; // 0..100
@@ -178,7 +194,9 @@ export interface GameState {
 export type Action =
   | { type: "expand"; h3: string } // claim an adjacent unowned hex (1 order + $)
   | { type: "upgrade"; h3: string } // deepen an owned hex (1 order + $)
-  | { type: "repair"; h3: string } // clear quake degradation (1 order + $)
+  | { type: "repair"; h3: string } // clear quake degradation (1 order + $ ∝ value)
+  | { type: "retrofit"; h3: string } // halve future quake damage (1 order + $ ∝ value)
+  | { type: "crew"; h3: string } // dispatch a work crew: +pay for a week (1 order + $)
   | { type: "assess"; h3: string; price: number } // set your parcel's price (free)
   | { type: "buyout"; h3: string } // buy any parcel at its assessed price (1 order)
   | { type: "pass" };

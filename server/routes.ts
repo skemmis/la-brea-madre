@@ -164,6 +164,20 @@ export function registerRoutes(app: Express) {
     return runOrderAction(req, res, { type: "repair", h3: h3Index });
   });
 
+  // Bolt a parcel down against the Madre (1 order + 5% of fair value).
+  app.post("/api/territory/retrofit", requireAuth, (req: Request, res: Response) => {
+    const { h3Index } = req.body;
+    if (!h3Index) return res.status(400).json({ error: "h3Index required" });
+    return runOrderAction(req, res, { type: "retrofit", h3: h3Index });
+  });
+
+  // Dispatch a work crew: a week of boosted pay on one parcel.
+  app.post("/api/territory/crew", requireAuth, (req: Request, res: Response) => {
+    const { h3Index } = req.body;
+    if (!h3Index) return res.status(400).json({ error: "h3Index required" });
+    return runOrderAction(req, res, { type: "crew", h3: h3Index });
+  });
+
   // Re-assess your parcel's price (free; the tax is the cost of bravado).
   app.post("/api/territory/assess", requireAuth, (req: Request, res: Response) => {
     const { h3Index, price } = req.body;

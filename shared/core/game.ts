@@ -52,6 +52,15 @@ function claimCost(config: GameConfig, ownedCount: number, h3: string): number {
   return claimPrice(config, h3);
 }
 
+/** Repair cost: degradation × value-scaled rate — prime land costs to fix. */
+export function repairCost(config: GameConfig, h3: string, degradation: number): number {
+  const perPoint = Math.max(
+    config.quake.repairFloorPerPoint,
+    claimPrice(config, h3) * config.quake.repairFraction
+  );
+  return Math.round(degradation * perPoint);
+}
+
 /** A parcel's current asking price (owner-set, defaulting to market value). */
 export function assessedPrice(state: GameState, config: GameConfig, h3: string): number {
   return state.hexes[h3]?.price ?? claimPrice(config, h3);
@@ -137,11 +146,27 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
     }
   }
 
-  // Repair: clear a shaken parcel's degradation (1 order + $ per point).
+  // Repair: clear a shaken parcel's degradation (1 order + $ scaled to value).
   for (const h of mine) {
     const hx = hexState(state, h);
-    if (hx.degradation > 0 && player.crude >= hx.degradation * config.quake.repairPerPoint) {
+    if (hx.degradation > 0 && player.crude >= repairCost(config, h, hx.degradation)) {
       actions.push({ type: "repair", h3: h });
+    }
+  }
+
+  // Retrofit: bolt a parcel down against the Madre (one-time, value-priced).
+  for (const h of mine) {
+    const hx = hexState(state, h);
+    if (!hx.retrofitted && player.crude >= Math.round(claimPrice(config, h) * config.works.retrofitCostFraction)) {
+      actions.push({ type: "retrofit", h3: h });
+    }
+  }
+
+  // Dispatch a crew: a week of boosted pay on one parcel.
+  for (const h of mine) {
+    const hx = hexState(state, h);
+    if ((hx.crewUntilTick ?? 0) <= state.tick && player.crude >= config.works.crewCost) {
+      actions.push({ type: "crew", h3: h });
     }
   }
 
@@ -226,9 +251,25 @@ export function applyAction(
 
     case "repair": {
       const hx = ensureHex(action.h3);
-      player.crude -= hx.degradation * config.quake.repairPerPoint;
+      player.crude -= repairCost(config, action.h3, hx.degradation);
       player.workOrders -= 1;
       hx.degradation = 0;
+      break;
+    }
+
+    case "retrofit": {
+      const hx = ensureHex(action.h3);
+      player.crude -= Math.round(claimPrice(config, action.h3) * config.works.retrofitCostFraction);
+      player.workOrders -= 1;
+      hx.retrofitted = true;
+      break;
+    }
+
+    case "crew": {
+      const hx = ensureHex(action.h3);
+      player.crude -= config.works.crewCost;
+      player.workOrders -= 1;
+      hx.crewUntilTick = next.tick + config.works.crewDays;
       break;
     }
   }
@@ -280,16 +321,19 @@ export function tick(
       .reduce((a, e) => a + e.magnitude, 0);
     const base = fineDollars * y.finePayout + wells * y.perWell;
     const upgradeMult = 1 + (y.upgradeBonus[hx.upgradeLevel] ?? 0);
+    const crewMult = (hx.crewUntilTick ?? 0) > next.tick ? config.works.crewMult : 1;
     const degradeFactor = 1 - hx.degradation / 100;
     const notes: string[] = [];
+    if (crewMult > 1) notes.push("crew on site");
 
     // The Madre stirs: quake events deposit degradation.
     const quakeDamage = hexEvents
       .filter((e) => e.kind === "quake")
       .reduce((a, e) => a + e.magnitude, 0);
     if (quakeDamage > 0) {
-      hx.degradation = Math.min(100, hx.degradation + Math.round(quakeDamage));
-      notes.push("the Madre stirred");
+      const mult = hx.retrofitted ? config.works.retrofitDamageMult : 1;
+      hx.degradation = Math.min(100, hx.degradation + Math.round(quakeDamage * mult));
+      notes.push(hx.retrofitted ? "the Madre stirred — the bolts held" : "the Madre stirred");
     }
 
     // The city dispatches you: carrion in your territory becomes Work Orders.
@@ -304,7 +348,7 @@ export function tick(
     }
 
     const baseYield = Math.floor(base * upgradeMult * degradeFactor);
-    const finalYield = Math.max(0, baseYield);
+    const finalYield = Math.max(0, Math.floor(base * upgradeMult * crewMult * degradeFactor));
 
     player.crude += finalYield;
     report.perPlayer[hx.ownerId].gained += finalYield;
