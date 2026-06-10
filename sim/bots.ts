@@ -12,7 +12,7 @@
  * core (applyAction) so illegal ideas fail exactly as they would in prod.
  */
 import { gridDisk } from "h3-js";
-import type { Action, GameConfig, GameState, PlayerId } from "../shared/core";
+import { claimPrice, type Action, type GameConfig, type GameState, type PlayerId } from "../shared/core";
 import type { Rng, SimWorld } from "./world";
 
 export interface BotCtx {
@@ -109,12 +109,10 @@ export function rentier(): Bot {
       );
       const target = best(upgradable, (h) => fineOf(ctx, h));
       if (target) return { type: "upgrade", h3: target };
-      // Otherwise grow toward money.
-      const f = frontier(ctx, owned);
+      // Otherwise grow toward money — the best parcel we can pay for.
+      const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
-      return claim && cash(ctx.state, ctx.me) >= ctx.config.costs.claim
-        ? { type: "expand", h3: claim }
-        : null;
+      return claim ? { type: "expand", h3: claim } : null;
     },
     defendBid(ctx, h3) {
       return Math.min(cash(ctx.state, ctx.me) * 0.5, Math.max(100, incomeOf(ctx, h3) * 5));
@@ -134,10 +132,9 @@ export function scavenger(): Bot {
       }
       const f = frontier(ctx, owned);
       // Carrion first; tie-break toward money.
-      const claim = best(f, (h) => carrionOf(ctx, h) * 1000 + fineOf(ctx, h));
-      return claim && cash(ctx.state, ctx.me) >= ctx.config.costs.claim
-        ? { type: "expand", h3: claim }
-        : null;
+      const affordable = f.filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
+      const claim = best(affordable, (h) => carrionOf(ctx, h) * 1000 + fineOf(ctx, h));
+      return claim ? { type: "expand", h3: claim } : null;
     },
     defendBid(ctx, h3) {
       return Math.min(cash(ctx.state, ctx.me) * 0.4, Math.max(60, incomeOf(ctx, h3) * 4));
@@ -155,11 +152,9 @@ export function sprawler(): Bot {
         const h = bestUnowned(ctx, ctx.world.byFine);
         return h ? { type: "expand", h3: h } : null;
       }
-      const f = frontier(ctx, owned);
+      const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
-      return claim && cash(ctx.state, ctx.me) >= ctx.config.costs.claim
-        ? { type: "expand", h3: claim }
-        : null;
+      return claim ? { type: "expand", h3: claim } : null;
     },
     defendBid() {
       return 0; // spread thin, concede everything
@@ -183,11 +178,9 @@ export function exploiter(): Bot {
         const h = bestUnowned(ctx, ctx.world.byFine);
         return h ? { type: "expand", h3: h } : null;
       }
-      const f = frontier(ctx, owned);
+      const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
-      return claim && cash(ctx.state, ctx.me) >= ctx.config.costs.claim
-        ? { type: "expand", h3: claim }
-        : null;
+      return claim ? { type: "expand", h3: claim } : null;
     },
     defendBid(ctx, h3) {
       return Math.min(cash(ctx.state, ctx.me) * 0.3, incomeOf(ctx, h3) * 2);
@@ -207,11 +200,9 @@ export function warlord(): Bot {
           const h = bestUnowned(ctx, ctx.world.byFine);
           return h ? { type: "expand", h3: h } : null;
         }
-        const f = frontier(ctx, owned);
+        const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
         const claim = best(f, (h) => fineOf(ctx, h));
-        return claim && cash(ctx.state, ctx.me) >= ctx.config.costs.claim
-          ? { type: "expand", h3: claim }
-          : null;
+        return claim ? { type: "expand", h3: claim } : null;
       }
       // Then take what others built: richest adjacent enemy parcel, war chest
       // sized to its income.
@@ -226,11 +217,9 @@ export function warlord(): Bot {
           return { type: "contest", h3: target, bid: Math.round(bid) };
         }
       }
-      const f = frontier(ctx, owned);
+      const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
-      return claim && cash(ctx.state, ctx.me) >= ctx.config.costs.claim
-        ? { type: "expand", h3: claim }
-        : null;
+      return claim ? { type: "expand", h3: claim } : null;
     },
     defendBid(ctx, h3) {
       return Math.min(cash(ctx.state, ctx.me) * 0.6, Math.max(150, incomeOf(ctx, h3) * 6));
@@ -251,8 +240,9 @@ export function drifter(): Bot {
       }
       const roll = ctx.rng();
       const f = frontier(ctx, owned);
-      if (roll < 0.5 && f.length) {
-        return { type: "expand", h3: f[Math.floor(ctx.rng() * f.length)] };
+      const affordable = f.filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
+      if (roll < 0.5 && affordable.length) {
+        return { type: "expand", h3: affordable[Math.floor(ctx.rng() * affordable.length)] };
       }
       if (roll < 0.7) {
         const h = owned[Math.floor(ctx.rng() * owned.length)];

@@ -42,9 +42,17 @@ function ownedHexes(state: GameState, playerId: PlayerId): string[] {
   return Object.keys(state.hexes).filter((h) => state.hexes[h].ownerId === playerId);
 }
 
-function claimCost(config: GameConfig, ownedCount: number): number {
+/** What a parcel costs to claim: priced at ~a month of its ticket money. */
+export function claimPrice(config: GameConfig, h3: string): number {
+  return Math.max(
+    config.costs.claim,
+    Math.round((config.board[h3]?.fineRate ?? 0) * config.costs.claimValueMult)
+  );
+}
+
+function claimCost(config: GameConfig, ownedCount: number, h3: string): number {
   if (ownedCount === 0 && config.costs.firstClaimFree) return 0;
-  return config.costs.claim;
+  return claimPrice(config, h3);
 }
 
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
@@ -113,19 +121,21 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
   // Everything below spends a Work Order.
   if ((player.workOrders ?? 0) < 1) return actions;
 
-  // Expand: adjacent unowned board hexes (or any board hex for the first claim).
-  const cost = claimCost(config, mine.length);
-  if (player.crude >= cost) {
-    if (mine.length === 0) {
+  // Expand: adjacent unowned board hexes (or any board hex for the first
+  // claim). Land is priced at its value — affordability is per parcel.
+  if (mine.length === 0) {
+    if (config.costs.firstClaimFree || player.crude >= config.costs.claim) {
       for (const h of Object.keys(config.board)) actions.push({ type: "expand", h3: h });
-    } else {
-      const frontier = new Set<string>();
-      for (const h of mine) {
-        for (const n of gridDisk(h, 1)) {
-          if (n !== h && config.board[n] && hexState(state, n).ownerId === null) frontier.add(n);
-        }
+    }
+  } else {
+    const frontier = new Set<string>();
+    for (const h of mine) {
+      for (const n of gridDisk(h, 1)) {
+        if (n !== h && config.board[n] && hexState(state, n).ownerId === null) frontier.add(n);
       }
-      for (const h of frontier) actions.push({ type: "expand", h3: h });
+    }
+    for (const h of frontier) {
+      if (player.crude >= claimPrice(config, h)) actions.push({ type: "expand", h3: h });
     }
   }
 
@@ -206,7 +216,7 @@ export function applyAction(
 
     case "expand": {
       const mine = ownedHexes(next, playerId);
-      const cost = claimCost(config, mine.length);
+      const cost = claimCost(config, mine.length, action.h3);
       player.crude -= cost;
       player.workOrders -= 1;
       const hx = ensureHex(action.h3);

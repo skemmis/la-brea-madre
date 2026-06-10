@@ -35,7 +35,7 @@ strategic tension.
 
 | Action  | Cost | Effect |
 |---|---|---|
-| Claim   | $100 | Take an adjacent unowned parcel (first ever claim: free, anywhere) |
+| Claim   | max($100, 30× its ticket $/day) | Land is priced at its value. First ever claim: free, anywhere |
 | Upgrade | $200/$400/$800 | Level 1/2/3 — bigger pay multiplier |
 | Repair  | $2 × degradation | Clear quake damage |
 | Contest | escrowed bid ($50 min) | Open a sealed-bid war (below) |
@@ -48,7 +48,7 @@ that ruins the parcel — and **Defend** in a war.
 
 Real USGS earthquakes (polled every 30 minutes, M1.5+ near the basin) deal
 degradation to owned parcels in a heat-map footprint around the epicenter
-(Gaussian falloff; an M2 brushes a neighborhood, an M3 a region), **doubled on
+(Gaussian falloff; an M2 covers a district, an M3 a region), **doubled on
 exploited parcels**. Degradation cuts income until repaired; repair costs an
 order, and the order bank is capped — so the bigger the empire, the longer its
 shaken edges bleed. The map's Seismic layer shows 30 days of shake heat; the

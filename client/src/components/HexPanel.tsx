@@ -19,8 +19,9 @@ interface Props {
 }
 
 const UPGRADE_COST = [200, 400, 800];
-const CLAIM_COST = 100;
 const MIN_BID = 50;
+// Land is priced at its value (mirrors core config: floor $100, 30× $/day).
+const claimPriceOf = (finePerDay: number) => Math.max(100, Math.round(finePerDay * 30));
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
@@ -136,16 +137,16 @@ export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, on
               {!hasOrders && <span className="italic"> — carrion in your territory earns more</span>}
             </p>
 
-            {/* Claim */}
+            {/* Claim — land is priced at its value */}
             {isUnowned && hasOrders && (
               <button
                 onClick={() => claim.mutate(hex.h3Index)}
-                disabled={claim.isPending}
+                disabled={claim.isPending || viewerCash < claimPriceOf(finePerDay)}
                 className="btn-ink w-full flex items-center gap-2 px-3 py-2 text-xs font-bold"
                 data-active="true"
               >
                 <Zap size={12} />
-                CLAIM — 1 ORDER + {usd(CLAIM_COST)}
+                CLAIM — 1 ORDER + {usd(claimPriceOf(finePerDay))}
               </button>
             )}
 

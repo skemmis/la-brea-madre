@@ -18,6 +18,7 @@ export function defaultConfig(
     seasonLength: undefined,
     costs: {
       claim: 100,
+      claimValueMult: 30, // a parcel costs ~a month of its ticket money
       firstClaimFree: true,
       upgrade: [200, 400, 800],
       relic: 600,

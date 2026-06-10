@@ -7,6 +7,8 @@ export type PlayerId = string;
 /** One cell of the static board: whether it exists + its ambient resources. */
 export interface BoardHex {
   wells: number;
+  /** Expected ticket $/day — the land's value, set by the shell from records. */
+  fineRate?: number;
 }
 
 export interface GameConfig {
@@ -19,7 +21,9 @@ export interface GameConfig {
   maxUpgrade: number;
   seasonLength?: number; // ticks until game over; undefined = endless
   costs: {
-    claim: number;
+    claim: number; // floor price for worthless land
+    /** Land is priced at its value: cost = max(claim, fineRate × this). */
+    claimValueMult: number;
     firstClaimFree: boolean;
     upgrade: number[]; // cost to go from level i -> i+1
     relic: number;

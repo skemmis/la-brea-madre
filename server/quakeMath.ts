@@ -3,21 +3,21 @@
  * becomes damage. No IO; the poller and the tick both lean on this.
  */
 
-/** Felt radius in km — tuned so an M2 brushes a neighborhood, an M3 a region. */
+/** Felt radius in km — an M2 covers a district, an M3 a whole region. */
 export function quakeRadiusKm(mag: number): number {
-  return Math.max(1, 1.5 + (mag - 1.5) * 4.3);
+  return Math.max(1.5, 2 + (mag - 1.5) * 5.5);
 }
 
-/** Peak degradation at the epicenter: M1.5 ≈ 4, M2 ≈ 9, M2.5 ≈ 16, M3 ≈ 25. */
+/** Peak degradation at the epicenter: M1.5 ≈ 6, M2 ≈ 14, M2.5 ≈ 24, M3 ≈ 38. */
 export function quakePeakDamage(mag: number): number {
-  return Math.min(30, Math.round(4 * Math.pow(mag - 0.5, 2)));
+  return Math.min(50, Math.round(6 * Math.pow(mag - 0.5, 2)));
 }
 
 /** Gaussian falloff: full at the epicenter, ~1% at the felt radius. */
 export function quakeIntensityAt(distKm: number, mag: number): number {
   const r = quakeRadiusKm(mag);
   if (distKm > r) return 0;
-  const sigma = r / 3; // steep: the rim rattles windows, the epicenter bites
+  const sigma = r / 2; // broad: the whole footprint takes real damage
   return Math.exp(-(distKm * distKm) / (2 * sigma * sigma));
 }
 

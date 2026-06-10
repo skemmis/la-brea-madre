@@ -75,12 +75,24 @@ export async function saveState(state: GameState): Promise<void> {
 // ─── Board + config (injected reference, rebuilt from the DB) ────────────────────
 
 async function buildBoard(): Promise<Record<string, BoardHex>> {
+  const meta = await getPipelineMeta();
+  const citWindow = Math.max(1, meta["citation_window_days"] ?? 1);
   const rows = await db
-    .select({ h3: hexCells.h3Index, wells: hexAmbient.oilWellCount })
+    .select({
+      h3: hexCells.h3Index,
+      wells: hexAmbient.oilWellCount,
+      fine: citationDaily.totalFine,
+    })
     .from(hexCells)
-    .leftJoin(hexAmbient, eq(hexCells.h3Index, hexAmbient.h3Index));
+    .leftJoin(hexAmbient, eq(hexCells.h3Index, hexAmbient.h3Index))
+    .leftJoin(
+      citationDaily,
+      and(eq(hexCells.h3Index, citationDaily.h3Index), eq(citationDaily.date, todayPT()))
+    );
   const board: Record<string, BoardHex> = {};
-  for (const r of rows) board[r.h3] = { wells: r.wells ?? 0 };
+  for (const r of rows) {
+    board[r.h3] = { wells: r.wells ?? 0, fineRate: Math.round((r.fine ?? 0) / citWindow) };
+  }
   return board;
 }
 
