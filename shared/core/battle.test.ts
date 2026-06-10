@@ -1,7 +1,9 @@
 /**
- * Tests for the deck-fight layer: the resolver's arithmetic, and the raid
- * lifecycle through the real core (escrow, nightly resolution, the finite
- * army, burn/rest regimes).
+ * Tests for the deck-fight layer, v2 (the three strata): the resolver's
+ * arithmetic (wards, bulwarks, the flock, recklessness), and the raid
+ * lifecycle through the real core — escrow, the finite army, and the
+ * asymmetric fates: attackers' fallen burn (rares leave fossils), defenders'
+ * fallen are wounded, poachers steal, medics heal.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -20,7 +22,7 @@ import {
   type Terrain,
 } from "./index";
 
-const NOWHERE: Terrain = { carrion: false, machine: false, tremor: false };
+const NOWHERE: Terrain = { black: false, blue: false, white: false };
 const card = (id: string) => CARD_BY_ID[id];
 
 // A small real board: a center hex and its 6 neighbours, all worthless dirt.
@@ -37,54 +39,56 @@ function raidConfig(over: Partial<GameConfig["raids"]> = {}): GameConfig {
 // ─── The resolver ─────────────────────────────────────────────────────────────
 
 test("higher power takes the lane; most lanes takes the battle; ties defend", () => {
+  // GRIDLOCK 9 and SWEEPER 4 vs three JOLTS 5 — no counters (all-blue vs black
+  // means black counters blue: the jolts get +3).
   const r = resolveBattle(
-    [card("m10"), card("m04"), card("t02")], // 9, 4, 2
-    [card("t07"), card("t07"), card("t07")], // 5, 5, 5 (machine counters tremor +2)
+    [card("u12"), card("u04"), card("u01")], // 9, 4, 1
+    [card("b06"), card("b06"), card("b06")], // 5+3 counter = 8
     NOWHERE,
     3
   );
-  // Lane 1: 9+2 vs 5 attacker. Lane 2: 4+2 vs 5 attacker. Lane 3: 2 vs 5+2 defender.
-  assert.equal(r.attackerLanes, 2);
-  assert.equal(r.defenderLanes, 1);
-  assert.equal(r.winner, "attacker");
+  assert.equal(r.lanes[0].defenderPower, 8, "black counters blue +3");
+  assert.equal(r.attackerLanes, 1); // only the GRIDLOCK survives the under
+  assert.equal(r.winner, "defender");
 
-  const tie = resolveBattle([card("m04")], [card("m04")], NOWHERE, 1);
+  const tie = resolveBattle([card("u04")], [card("u04")], NOWHERE, 1);
   assert.equal(tie.winner, "defender", "equal power defends the deed");
 });
 
-test("the counter triangle pays +3, home ground +2", () => {
-  // Carrion 1 vs machine 1: possum gets +3 counter (+1 pack needs friends).
-  const r = resolveBattle([card("c01")], [card("m01")], NOWHERE, 1);
-  assert.equal(r.lanes[0].attackerPower, 4);
-  assert.equal(r.lanes[0].defenderPower, 1);
-
-  // Same fight on machine ground: the meter holds home turf and surges.
-  const home = resolveBattle([card("c01")], [card("m01")], { ...NOWHERE, machine: true }, 1);
-  assert.equal(home.lanes[0].defenderPower, 5, "1 base + 2 affinity + 2 surge");
+test("home ground pays +2 and surges fire on it", () => {
+  // SEISMOGRAPH STRIP on broken ground: 3 base + 2 affinity + 3 surge.
+  const home = resolveBattle([card("b03")], [card("u04")], { ...NOWHERE, black: true }, 1);
+  assert.equal(home.lanes[0].attackerPower, 3 + 2 + 3 + 3, "affinity + surge + counter");
+  const away = resolveBattle([card("b03")], [card("u04")], NOWHERE, 1);
+  assert.equal(away.lanes[0].attackerPower, 3 + 3, "no stratum, no surge — counter only");
 });
 
-test("the pack runs together and LA MADRE takes both", () => {
-  const swarm = resolveBattle(
-    [card("c09"), card("c01"), card("c02")], // rats 2 + 2/other-carrion = 6
-    [card("m06"), card("m06"), card("m06")],
+test("a ward silences the rite across the lane", () => {
+  // DMV BASILISK wards the SEISMOGRAPH's surge away on its own home ground.
+  const r = resolveBattle([card("b03")], [card("u03")], { ...NOWHERE, black: true }, 1);
+  assert.equal(r.lanes[0].attackerPower, 3 + 2 + 3, "affinity and counter stay; surge is warded");
+  // ...and even LA BREA BUBBLES cannot sink a warded lane.
+  const sink = resolveBattle([card("b09")], [card("u03")], NOWHERE, 1);
+  assert.ok(!sink.lanes[0].sunk, "the ordinance forbids the tar");
+  // Unwarded, the tar takes the lane whole.
+  const free = resolveBattle([card("b09")], [card("u04")], NOWHERE, 1);
+  assert.ok(free.lanes[0].sunk);
+  assert.equal(free.winner, "defender", "a fully sunk battle defends");
+});
+
+test("bulwarks hold deeds but don't help on the road; the flock runs together", () => {
+  const holding = resolveBattle([card("w01")], [card("u02")], NOWHERE, 1);
+  assert.equal(holding.lanes[0].defenderPower, 2 + 3 + 3, "bulwark + counters white");
+  const roadtrip = resolveBattle([card("u02")], [card("b04")], NOWHERE, 1);
+  assert.equal(roadtrip.lanes[0].attackerPower, 2, "no bulwark when attacking");
+
+  const flock = resolveBattle(
+    [card("w04"), card("w01"), card("w02")], // RATS: 2 + 2×2 flock
+    [card("u04"), card("u04"), card("u04")],
     NOWHERE,
     3
   );
-  // Rats: 2 base + 3 counter(machine) + 2×2 pack = 9 vs THE BOOT 5.
-  assert.equal(swarm.lanes[0].attackerPower, 9);
-
-  const sink = resolveBattle([card("t10")], [card("m10")], NOWHERE, 1);
-  assert.equal(sink.lanes[0].winner, "none");
-  assert.ok(sink.lanes[0].sunk);
-  assert.equal(sink.winner, "defender", "a fully sunk battle defends");
-});
-
-test("phoenixes are never among the beaten; empty lanes lose to anyone", () => {
-  const r = resolveBattle([card("m10")], [card("c04")], NOWHERE, 2); // coyote loses lane 1
-  assert.equal(r.beaten.defender.length, 0, "el coyote walks away");
-  assert.equal(r.lanes[1].winner, "none", "two empty lanes score nothing");
-  const scraps = resolveBattle([card("m01")], [], NOWHERE, 1);
-  assert.equal(scraps.winner, "attacker", "an empty garrison falls");
+  assert.equal(flock.lanes[0].attackerPower, 2 + 4, "the hundred rats flock +4");
 });
 
 // ─── The raid lifecycle ───────────────────────────────────────────────────────
@@ -101,21 +105,20 @@ function armed(cfg: GameConfig, attackerCards: string[], defenderCards: string[]
 
 test("a won raid takes the deed and pays the loser half their own price", () => {
   const cfg = raidConfig();
-  let s = armed(cfg, Array(5).fill("m10"), Array(5).fill("t02")); // 9s vs 2s
+  let s = armed(cfg, Array(5).fill("u12"), Array(5).fill("b04")); // 9s vs 3+3s
   const cashBefore = { a: s.players["1"].crude, d: s.players["2"].crude };
   s = applyAction(s, cfg, "1", { type: "raid", h3: CENTER });
   assert.equal(s.players["1"].crude, cashBefore.a - 50, "escrow = half the $100 ask");
   s = tick(s, cfg, []);
   assert.equal(s.hexes[CENTER].ownerId, "1", "the deed falls");
-  const raid = s.lastReport!.raids![0];
-  assert.ok(raid.attackerWon);
-  // Defender got the $50 comp, then both paid their $1 county tax (1 parcel each... attacker now holds 2).
+  assert.ok(s.lastReport!.raids![0].attackerWon);
   assert.ok(s.players["2"].crude > cashBefore.d, "the loser is compensated");
 });
 
-test("a failed raid forfeits the stake to the defender and refunds the rest", () => {
+test("a failed raid forfeits the stake; the fallen attackers burn — rares to fossils", () => {
   const cfg = raidConfig();
-  let s = armed(cfg, Array(5).fill("t02"), Array(5).fill("m10")); // 2s vs 9s
+  // Five rare NOTARIES (6) into five mythic GRIDLOCKS (9): a massacre.
+  let s = armed(cfg, Array(5).fill("u10"), Array(5).fill("u12"));
   const cashBefore = { a: s.players["1"].crude, d: s.players["2"].crude };
   s = applyAction(s, cfg, "1", { type: "raid", h3: CENTER });
   s = tick(s, cfg, []);
@@ -124,12 +127,75 @@ test("a failed raid forfeits the stake to the defender and refunds the rest", ()
   const taxD = s.lastReport!.perPlayer["2"].taxPaid;
   assert.equal(s.players["1"].crude, cashBefore.a - 25 - taxA, "stake lost, remainder refunded");
   assert.equal(s.players["2"].crude, cashBefore.d + 25 - taxD, "the defender keeps the stake");
+  // You declared the war: your fallen don't come home.
+  assert.equal(s.players["1"].binder!.length, 0, "all five attackers burned");
+  assert.equal(s.players["1"].fossils!.length, 5, "rares leave fossils, dated");
+  assert.equal(s.players["1"].fossils![0].def, "u10");
+  // The defenders won their lanes — untouched.
+  assert.equal(s.players["2"].binder!.filter((c) => !c.restUntil).length, 5);
+});
+
+test("beaten defenders are wounded, rest, and report back", () => {
+  const cfg = raidConfig({ restDays: 3 });
+  let s = armed(cfg, Array(5).fill("u12"), Array(5).fill("b04"));
+  s = applyAction(s, cfg, "1", { type: "raid", h3: CENTER });
+  s = tick(s, cfg, []);
+  const wounded = s.players["2"].binder!.filter((c) => (c.restUntil ?? 0) > s.tick);
+  assert.equal(wounded.length, 5, "the beaten garrison is wounded, not dead");
+  for (let i = 0; i < 4; i++) s = tick(s, cfg, []);
+  assert.equal(
+    s.players["2"].binder!.filter((c) => (c.restUntil ?? 0) > s.tick).length,
+    0,
+    "everyone reports back after their rest"
+  );
+});
+
+test("reckless cards burn even when they win", () => {
+  const cfg = raidConfig();
+  // TAR SEEP: 2 + 2 reckless + 3 counter = 7 over SWEEPER 4, every lane.
+  let s = armed(cfg, Array(5).fill("b02"), Array(5).fill("u04"));
+  s = applyAction(s, cfg, "1", { type: "raid", h3: CENTER });
+  s = tick(s, cfg, []);
+  assert.ok(s.lastReport!.raids![0].attackerWon, "the seeps take the deed");
+  assert.equal(s.players["1"].binder!.length, 0, "and burn anyway — no frills, no survivors");
+  assert.ok(!s.players["1"].fossils?.length, "commons leave no fossils");
+});
+
+test("the poacher steals what it beats — permanently, and it arrives wounded", () => {
+  const cfg = raidConfig();
+  // Attacker sends a lone CHANDELIER WARNING into the MAGPIE ASSESSOR.
+  let s = armed(cfg, ["b04"], ["w09"]);
+  s = applyAction(s, cfg, "1", { type: "raid", h3: CENTER });
+  s = tick(s, cfg, []);
+  // Magpie: 3 + 3 (white eats black) = 6 over 3 — the chandelier is hers now.
+  assert.equal(s.players["1"].binder!.length, 0, "the attacker's card is gone");
+  assert.equal(s.players["1"].fossils?.length ?? 0, 0, "not dead — stolen");
+  const stolen = s.players["2"].binder!.find((c) => c.def === "b04");
+  assert.ok(stolen, "the magpie keeps it");
+  assert.ok((stolen!.restUntil ?? 0) > s.tick, "it arrives wounded");
+  assert.deepEqual(s.lastReport!.raids![0].poached, [["b04", "2"]]);
+});
+
+test("phoenixes walk away from lost lanes; medics heal the wounded at dawn", () => {
+  const cfg = raidConfig();
+  let s = armed(cfg, ["u12"], ["w05"]); // GRIDLOCK 9 vs EL COYOTE 4
+  s = applyAction(s, cfg, "1", { type: "raid", h3: CENTER });
+  s = tick(s, cfg, []);
+  const coyote = s.players["2"].binder!.find((c) => c.def === "w05");
+  assert.ok(coyote && !coyote.restUntil, "beaten Tuesday, fine Tuesday night");
+
+  // OPOSSUM MADONNA survives her lane and heals the longest-wounded card.
+  let m = armed(cfg, ["b04"], ["w08", "u04"]);
+  m.players["2"].binder![1].restUntil = 99; // an old wound
+  m = applyAction(m, cfg, "1", { type: "raid", h3: CENTER });
+  m = tick(m, cfg, []);
+  assert.ok(!m.players["2"].binder![1].restUntil, "the madonna makes room for a twelfth");
 });
 
 test("the finite army: a drained binder fights the next front on scraps", () => {
   const cfg = raidConfig({ battleSize: 5 });
   // Defender owns CENTER and a neighbour; only 7 cards — one full defense + scraps.
-  let s = armed(cfg, Array(10).fill("m04"), Array(7).fill("m10"));
+  let s = armed(cfg, Array(10).fill("u04"), Array(7).fill("u12"));
   const second = RING.find((h) => h !== CENTER && s.hexes[h]?.ownerId !== "1")!;
   s.players["2"].workOrders = 1;
   applyActionMut(s, cfg, "2", { type: "expand", h3: second });
@@ -145,25 +211,9 @@ test("the finite army: a drained binder fights the next front on scraps", () => 
   assert.ok(scraps.attackerWon, "the drained front falls");
 });
 
-test("burn and rest regimes discipline the beaten", () => {
-  const burn = raidConfig({ burnBeaten: true });
-  let s = armed(burn, Array(5).fill("m10"), Array(5).fill("t02"));
-  s = applyAction(s, burn, "1", { type: "raid", h3: CENTER });
-  s = tick(s, burn, []);
-  assert.equal(s.players["2"].binder!.length, 0, "five beaten cards burned");
-  assert.equal(s.players["1"].binder!.length, 5, "the victors all came home");
-
-  const rest = raidConfig({ beatenRestDays: 3 });
-  let r = armed(rest, Array(5).fill("m10"), Array(5).fill("t02"));
-  r = applyAction(r, rest, "1", { type: "raid", h3: CENTER });
-  r = tick(r, rest, []);
-  const resting = r.players["2"].binder!.filter((c) => (c.restUntil ?? 0) > r.tick);
-  assert.equal(resting.length, 5, "the beaten rest");
-});
-
 test("buyouts are closed when raids are open (and vice versa)", () => {
   const cfg = raidConfig();
-  let s = armed(cfg, ["m01"], ["m01"]);
+  let s = armed(cfg, ["u01"], ["u01"]);
   assert.throws(() => applyAction(s, cfg, "1", { type: "buyout", h3: CENTER }), /window is closed/);
   const peace = defaultConfig(board, ["1", "2"]);
   let p = newGame(peace, 1);
@@ -185,14 +235,14 @@ test("packs cost scrip and respect the binder cap; same seed, same pulls", () =>
   t.players["1"].scrip = 1000;
   assert.deepEqual(buyPackMut(t, cfg, "1"), pulls, "the rip is seeded");
 
-  s.players["1"].binder = Array(cfg.raids.collectionCap - 2).fill({ def: "m01" });
+  s.players["1"].binder = Array(cfg.raids.collectionCap - 2).fill({ def: "u01" });
   assert.throws(() => buyPackMut(s, cfg, "1"), /binder/);
 });
 
 test("raid nights replay identically from the same seed", () => {
   const run = () => {
     const cfg = raidConfig();
-    let s = armed(cfg, Array(8).fill("m06"), Array(8).fill("t07"));
+    let s = armed(cfg, Array(8).fill("u07"), Array(8).fill("b06"));
     s = applyAction(s, cfg, "1", { type: "raid", h3: CENTER });
     s = tick(s, cfg, []);
     return JSON.stringify({ h: s.hexes, p: s.players, r: s.lastReport!.raids });

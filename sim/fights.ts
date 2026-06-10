@@ -62,13 +62,16 @@ function build(score: (c: CardDef) => number, filter?: (c: CardDef) => boolean):
   return out;
 }
 
-const riteValue = (c: CardDef): number =>
-  c.rite ? { surge: 2, phoenix: 2.5, sink: 1.5, pack: 2, predator: 2 }[c.rite.kind] : 0;
+const RITE_VALUE: Record<string, number> = {
+  surge: 2, reckless: 2, sink: 1.5, ward: 2.5, bulwark: 2,
+  flock: 2, phoenix: 2.5, medic: 2, poach: 3, predator: 2,
+};
+const riteValue = (c: CardDef): number => (c.rite ? RITE_VALUE[c.rite.kind] ?? 0 : 0);
 
 function balancedBuild(): string[] {
   // Even suit spread, rites valued as highly as raw power.
   const out: string[] = [];
-  for (const suit of ["carrion", "machine", "tremor"] as Suit[]) {
+  for (const suit of ["black", "blue", "white"] as Suit[]) {
     const third = build((c) => c.power + riteValue(c) * 1.5, (c) => c.suit === suit);
     out.push(...third.slice(0, Math.ceil(CAP / 3)));
   }
@@ -78,15 +81,16 @@ function balancedBuild(): string[] {
 const ARCHETYPES: Record<string, () => string[]> = {
   goodstuff: () => build((c) => c.power), // five biggest numbers, every time
   balanced: balancedBuild,
-  swarm: () => build((c) => (c.rite?.kind === "pack" ? 10 + c.power : c.suit === "carrion" ? c.power : 0)),
-  tremorist: () => build((c) => c.power + riteValue(c), (c) => c.suit === "tremor"),
+  aggro: () => build((c) => c.power + (c.rite?.kind === "reckless" ? 3 : 0), (c) => c.suit === "black"),
+  wall: () => build((c) => c.power + (c.rite?.kind === "ward" || c.rite?.kind === "bulwark" ? 3 : 0), (c) => c.suit === "blue"),
+  flock: () => build((c) => (c.rite ? RITE_VALUE[c.rite.kind] * 2 : 0) + c.power, (c) => c.suit === "white"),
 };
 
 const TERRAINS: Record<string, Terrain> = {
-  neutral: { carrion: false, machine: false, tremor: false },
-  corridor: { carrion: false, machine: true, tremor: false },
-  fringe: { carrion: true, machine: false, tremor: false },
-  "broken ground": { carrion: false, machine: false, tremor: true },
+  neutral: { black: false, blue: false, white: false },
+  "broken ground": { black: true, blue: false, white: false },
+  corridor: { black: false, blue: true, white: false },
+  fringe: { black: false, blue: false, white: true },
 };
 
 // ─── The bouts ────────────────────────────────────────────────────────────────

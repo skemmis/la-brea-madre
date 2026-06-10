@@ -41,8 +41,10 @@ const WORLD = arg("world", "la");
 const N = parseInt(arg("n", "0"), 10); // population size; 0 = the classic six
 const ALLIANCES = parseInt(arg("alliances", "0"), 10);
 const RAIDS = process.argv.includes("--raids");
-const BURN = process.argv.includes("--burn"); // beaten cards are destroyed
-const REST = parseInt(arg("rest", "0"), 10); // beaten cards rest N days
+type Fate = "burn" | "rest" | "none";
+const AFATE = arg("afate", "burn") as Fate; // beaten attacker cards: burn (default)
+const DFATE = arg("dfate", "rest") as Fate; // beaten defender cards: wounded (default)
+const RESTDAYS = parseInt(arg("restdays", "3"), 10);
 const BOTS = arg("bots", "rentier,scavenger,sprawler,flipper,drifter").split(",");
 const MAX_ACTIONS_PER_DAY = 8;
 
@@ -178,7 +180,7 @@ async function main() {
   const ids = bots.map((_, i) => String(i + 1));
   const base = defaultConfig(world.board, ids);
   const config = RAIDS
-    ? { ...base, raids: { ...base.raids, enabled: true, burnBeaten: BURN, beatenRestDays: REST } }
+    ? { ...base, raids: { ...base.raids, enabled: true, attackerFate: AFATE, defenderFate: DFATE, restDays: RESTDAYS } }
     : base;
   let state = newGame(config, SEED);
   const personaName = (i: number): string => personaOf[i].split("-")[0];

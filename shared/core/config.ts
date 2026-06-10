@@ -60,8 +60,9 @@ export function defaultConfig(
       battleSize: 5,
       collectionCap: 50, // ten full defenses a night, then the walls are bare
       starterCards: 15,
-      beatenRestDays: 0,
-      burnBeaten: false,
+      attackerFate: "burn", // you declared the war; your fallen don't come home
+      defenderFate: "rest", // the besieged bleed strength, never bone
+      restDays: 3,
       machineTerrainFine: 300,
       carrionTerrainRate: 0.03,
     },

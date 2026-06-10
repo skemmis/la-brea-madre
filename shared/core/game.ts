@@ -554,13 +554,16 @@ export function tick(
 
 // ─── Raids: the deck-fight layer ──────────────────────────────────────────────
 
-/** What the ground favors: real ticket money, real carrion, unrepaired damage. */
+/** What the ground favors: the three strata, read off the real city. */
 export function terrainOf(config: GameConfig, state: GameState, h3: string): Terrain {
   const cell = config.board[h3];
   return {
-    machine: (cell?.fineRate ?? 0) >= config.raids.machineTerrainFine,
-    carrion: (cell?.carrionRate ?? 0) >= config.raids.carrionTerrainRate,
-    tremor: (state.hexes[h3]?.degradation ?? 0) > 0,
+    // The under: tar wells, or ground the Madre has already broken.
+    black: (cell?.wells ?? 0) > 0 || (state.hexes[h3]?.degradation ?? 0) > 0,
+    // The middle: a real ticket corridor.
+    blue: (cell?.fineRate ?? 0) >= config.raids.machineTerrainFine,
+    // The upper: the dead-animal fringe.
+    white: (cell?.carrionRate ?? 0) >= config.raids.carrionTerrainRate,
   };
 }
 
@@ -598,9 +601,12 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
   };
   const draw = (id: PlayerId): number[] => poolOf(id).splice(0, config.raids.battleSize);
 
-  // Beaten cards' fates are settled after the whole night (stable indices).
+  // Fates are queued all night and settled at dawn (stable binder indices).
+  // Priority per beaten card: poach > sink/reckless burn > side fate.
   const toRest: { id: PlayerId; idx: number }[] = [];
   const toBurn = new Map<PlayerId, Set<number>>();
+  const toPoach: { fromId: PlayerId; idx: number; toId: PlayerId }[] = [];
+  const toHeal = new Map<PlayerId, number>(); // medic charges per player
   const burnSet = (id: PlayerId): Set<number> => {
     let s = toBurn.get(id);
     if (!s) {
@@ -608,6 +614,11 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
       toBurn.set(id, s);
     }
     return s;
+  };
+  const burn = (id: PlayerId, idx: number): string[] => {
+    burnSet(id).add(idx);
+    const def = next.players[id]?.binder?.[idx]?.def;
+    return def ? [def] : [];
   };
 
   for (const raid of raids) {
@@ -628,19 +639,53 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
     const dHand = dIdx.map((i) => CARD_BY_ID[defender?.binder?.[i]?.def ?? ""]).filter(Boolean);
     const result = resolveBattle(aHand, dHand, terrainOf(config, next, raid.h3), config.raids.battleSize);
 
-    // Beaten cards (phoenixes excluded by the resolver's lane bookkeeping).
+    // Fates, lane by lane (phoenixes excluded — they always walk away).
+    const burned = { attacker: [] as string[], defender: [] as string[] };
+    const woundedReport = { attacker: [] as string[], defender: [] as string[] };
+    const poached: [string, PlayerId][] = [];
+    const settleSide = (
+      side: "attacker" | "defender",
+      lane: number,
+      r: (typeof result.lanes)[number]
+    ): void => {
+      const me = side === "attacker" ? raid.attackerId : defenderId;
+      const card = side === "attacker" ? r.attacker : r.defender;
+      const idx = (side === "attacker" ? aIdx : dIdx)[lane];
+      const foe = side === "attacker" ? r.defender : r.attacker;
+      const foeWarded = side === "attacker" ? r.defenderWarded : r.attackerWarded;
+      const myWarded = side === "attacker" ? r.attackerWarded : r.defenderWarded;
+      const foeId = side === "attacker" ? defenderId : raid.attackerId;
+      if (!card || idx === undefined) return;
+      if (card.rite?.kind === "phoenix" && !myWarded) return; // it walks away
+
+      const beaten = r.sunk || (r.winner !== "none" && r.winner !== side);
+      const recklessFired = card.rite?.kind === "reckless" && !myWarded;
+      if (beaten) {
+        // The poacher's claim comes first: the winner steals what it beat.
+        if (!r.sunk && foe?.rite?.kind === "poach" && !foeWarded) {
+          toPoach.push({ fromId: me, idx, toId: foeId });
+          poached.push([card.id, foeId]);
+        } else if (r.sunk || recklessFired) {
+          burned[side].push(...burn(me, idx)); // the tar keeps what it takes
+        } else {
+          const fate = side === "attacker" ? config.raids.attackerFate : config.raids.defenderFate;
+          if (fate === "burn") burned[side].push(...burn(me, idx));
+          else if (fate === "rest") {
+            toRest.push({ id: me, idx });
+            woundedReport[side].push(card.id);
+          }
+        }
+      } else {
+        // Survivors' rites: the reckless burn anyway; the medics make rounds.
+        if (recklessFired) burned[side].push(...burn(me, idx));
+        else if (card.rite?.kind === "medic" && !myWarded) {
+          toHeal.set(me, (toHeal.get(me) ?? 0) + 1);
+        }
+      }
+    };
     for (let lane = 0; lane < result.lanes.length; lane++) {
-      const r = result.lanes[lane];
-      const aBeaten = r.attacker && (r.sunk || r.winner === "defender") && r.attacker.rite?.kind !== "phoenix";
-      const dBeaten = r.defender && (r.sunk || r.winner === "attacker") && r.defender.rite?.kind !== "phoenix";
-      if (aBeaten && aIdx[lane] !== undefined) {
-        if (config.raids.burnBeaten) burnSet(raid.attackerId).add(aIdx[lane]);
-        else if (config.raids.beatenRestDays > 0) toRest.push({ id: raid.attackerId, idx: aIdx[lane] });
-      }
-      if (dBeaten && dIdx[lane] !== undefined) {
-        if (config.raids.burnBeaten) burnSet(defenderId).add(dIdx[lane]);
-        else if (config.raids.beatenRestDays > 0) toRest.push({ id: defenderId, idx: dIdx[lane] });
-      }
+      settleSide("attacker", lane, result.lanes[lane]);
+      settleSide("defender", lane, result.lanes[lane]);
     }
 
     let paid: number;
@@ -666,17 +711,61 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
       attackerCards: aHand.length,
       defenderCards: dHand.length,
       paid,
+      burned,
+      wounded: woundedReport,
+      poached,
     });
   }
 
-  // Dawn: the beaten rest or burn.
+  // ── Dawn: wounds, theft, ash, and the medics' rounds ──
   for (const { id, idx } of toRest) {
     const b = next.players[id]?.binder?.[idx];
-    if (b) b.restUntil = next.tick + 1 + config.raids.beatenRestDays;
+    if (b) b.restUntil = next.tick + 1 + config.raids.restDays;
   }
+  // Stolen cards change binders, arriving wounded. A full binder can't hold
+  // the prize — the poacher keeps it as a trophy fossil instead.
+  for (const { fromId, idx, toId } of toPoach) {
+    const card = next.players[fromId]?.binder?.[idx];
+    if (!card) continue;
+    burnSet(fromId).add(idx); // leaves the old binder either way
+    const thief = next.players[toId];
+    if (!thief) continue;
+    thief.binder ??= [];
+    if (thief.binder.length < config.raids.collectionCap) {
+      thief.binder.push({ def: card.def, restUntil: next.tick + 1 + config.raids.restDays });
+    } else {
+      (thief.fossils ??= []).push({ def: card.def, tick: next.tick });
+    }
+  }
+  // The dead leave the binder; rares and mythics leave a fossil behind.
   for (const [id, dead] of toBurn) {
     const p = next.players[id];
-    if (p?.binder) p.binder = p.binder.filter((_, i) => !dead.has(i));
+    if (!p?.binder) continue;
+    const stolen = new Set(
+      toPoach.filter((m) => m.fromId === id).map((m) => m.idx)
+    );
+    for (const idx of dead) {
+      if (stolen.has(idx)) continue; // poached, not killed — no fossil
+      const def = CARD_BY_ID[p.binder[idx]?.def ?? ""];
+      if (def && (def.rarity === "rare" || def.rarity === "mythic")) {
+        (p.fossils ??= []).push({ def: def.id, tick: next.tick });
+      }
+    }
+    p.binder = p.binder.filter((_, i) => !dead.has(i));
+  }
+  // Medics heal the longest-suffering wounded card per charge.
+  for (const [id, charges] of toHeal) {
+    const binder = next.players[id]?.binder;
+    if (!binder) continue;
+    for (let c = 0; c < charges; c++) {
+      let pick = -1;
+      for (let i = 0; i < binder.length; i++) {
+        const until = binder[i].restUntil ?? 0;
+        if (until > next.tick && (pick === -1 || until > (binder[pick].restUntil ?? 0))) pick = i;
+      }
+      if (pick === -1) break;
+      delete binder[pick].restUntil;
+    }
   }
 }
 

@@ -83,13 +83,19 @@ export interface GameConfig {
     collectionCap: number;
     /** Cards a brand-new player starts with. */
     starterCards: number;
-    /** Beaten cards rest this many days (0 = everyone reports back at dawn). */
-    beatenRestDays: number;
-    /** When true, beaten cards are destroyed outright. */
-    burnBeaten: boolean;
-    /** A hex is MACHINE terrain at or above this ticket $/day. */
+    /**
+     * What befalls a beaten card. You declared the war: attackers' fallen
+     * BURN (rares and mythics leave a fossil). Defenders' fallen are WOUNDED
+     * — they rest restDays and return. Sunk lanes and reckless cards burn
+     * regardless of side; poached cards change owners instead.
+     */
+    attackerFate: "burn" | "rest" | "none";
+    defenderFate: "burn" | "rest" | "none";
+    /** How long a wounded card rests. */
+    restDays: number;
+    /** A hex is BLUE terrain at or above this ticket $/day. */
     machineTerrainFine: number;
-    /** A hex is CARRION terrain at or above this dead-animal rate/day. */
+    /** A hex is WHITE terrain at or above this dead-animal rate/day. */
     carrionTerrainRate: number;
   };
   packs: {
@@ -142,6 +148,17 @@ export interface PlayerState {
   binder?: BinderCard[];
   /** Oracle scrip — pack money, minted only by winning market settlements. */
   scrip?: number;
+  /**
+   * The fossil gallery: rares and mythics that burned. The tar preserves
+   * what it kills — out of play forever, on display forever.
+   */
+  fossils?: Fossil[];
+}
+
+export interface Fossil {
+  def: string;
+  /** The tick the card died — every fossil is dated. */
+  tick: number;
 }
 
 /** One owned copy of a card. `def` is a catalog id (cards.ts). */
@@ -193,6 +210,11 @@ export interface RaidReport {
   defenderCards: number;
   /** $ that changed hands: comp to the loser of the land, or stake to the defender. */
   paid: number;
+  /** Card ids destroyed (per side), wounded, stolen, and healed tonight. */
+  burned: { attacker: string[]; defender: string[] };
+  wounded: { attacker: string[]; defender: string[] };
+  /** Cards that changed binders: [cardId, newOwnerId]. */
+  poached: [string, PlayerId][];
 }
 
 // ─── Prediction markets (the first surface) ────────────────────────────────────

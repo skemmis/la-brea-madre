@@ -21,8 +21,11 @@ import type { Rng } from "./world";
 
 export type CurationStyle = "power" | "balanced" | "swarm" | "random";
 
-const riteValue = (c: CardDef): number =>
-  c.rite ? { surge: 2, phoenix: 2.5, sink: 1.5, pack: 2, predator: 2 }[c.rite.kind] : 0;
+const RITE_VALUE: Record<string, number> = {
+  surge: 2, reckless: 2, sink: 1.5, ward: 2.5, bulwark: 2,
+  flock: 2, phoenix: 2.5, medic: 2, poach: 3, predator: 2,
+};
+const riteValue = (c: CardDef): number => (c.rite ? RITE_VALUE[c.rite.kind] ?? 0 : 0);
 
 function scoreCard(style: CurationStyle, c: CardDef, rng: Rng): number {
   switch (style) {
@@ -31,7 +34,7 @@ function scoreCard(style: CurationStyle, c: CardDef, rng: Rng): number {
     case "balanced":
       return c.power + riteValue(c) * 1.5;
     case "swarm":
-      return c.rite?.kind === "pack" ? 10 + c.power : c.suit === "carrion" ? c.power : c.power / 2;
+      return c.rite?.kind === "flock" ? 10 + c.power : c.suit === "white" ? c.power : c.power / 2;
     case "random":
       return rng();
   }
