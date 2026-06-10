@@ -705,7 +705,47 @@ async function contours(): Promise<void> {
 }
 
 // `ripples` reads the land/coast outputs, so it runs after them.
-const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities, contours };
+/**
+ * The focus mask: everything OUTSIDE the City of LA, as fillable polygons —
+ * the viewport box with the city's outer ring cut out, plus the boundary's
+ * interior holes (county enclaves; not city land) as their own polygons.
+ * Drawn as a translucent paper wash so the playable area reads at a glance,
+ * the way old sheets grayed the neighbor territory.
+ */
+async function mask(): Promise<void> {
+  const boundary = JSON.parse(
+    fs.readFileSync("client/public/geo/la-city-boundary.geojson", "utf8")
+  );
+  const geom = boundary.features[0].geometry;
+  const rings: Pt[][] =
+    geom.type === "MultiPolygon"
+      ? geom.coordinates.flat()
+      : geom.coordinates;
+
+  // Ring 0 is the city outline; the rest are holes punched out of it.
+  const [outline, ...holes] = rings;
+  const box: Pt[] = [
+    [BBOX[0], BBOX[1]],
+    [BBOX[2], BBOX[1]],
+    [BBOX[2], BBOX[3]],
+    [BBOX[0], BBOX[3]],
+    [BBOX[0], BBOX[1]],
+  ];
+
+  const polygons: Pt[][][] = [[box, outline], ...holes.map((h) => [h])];
+  write("la-city-mask.geojson", {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {},
+        geometry: { type: "MultiPolygon", coordinates: polygons },
+      },
+    ],
+  });
+}
+
+const tasks = { land, coast, ripples, roads, streets, neighborhoods, cities, contours, mask };
 const only = process.argv[2] as keyof typeof tasks | undefined;
 (async () => {
   for (const [name, fn] of Object.entries(tasks)) {

@@ -51,6 +51,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
     streets: { type: "geojson", data: "/geo/la-streets.geojson" },
     roads: { type: "geojson", data: "/geo/la-roads.geojson" },
     boundary: { type: "geojson", data: "/geo/la-city-boundary.geojson" },
+    mask: { type: "geojson", data: "/geo/la-city-mask.geojson" },
     hoods: { type: "geojson", data: "/geo/la-neighborhood-labels.geojson" },
     cities: { type: "geojson", data: "/geo/la-city-labels.geojson" },
     ocean: {
@@ -122,6 +123,15 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "line-opacity": 0.59,
       },
     },
+    // The focus mask: a translucent paper wash over everything beyond the
+    // city limit, the way the old sheets grayed neighbor territory — the
+    // playable area reads at a glance.
+    {
+      id: "city-mask",
+      type: "fill",
+      source: "mask",
+      paint: { "fill-color": PAPER, "fill-opacity": 0.55 },
+    },
     // The city limit, inked above the grid.
     {
       id: "city-boundary",
@@ -176,7 +186,7 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
       },
       paint: {
         "text-color": INK_HEX,
-        "text-opacity": 0.7,
+        "text-opacity": 0.45,
         "text-halo-color": PAPER,
         "text-halo-width": 1.2,
       },
@@ -231,15 +241,16 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
       layout: {
         "text-field": ["get", "name"] as any,
         "text-font": SERIF_BOLD,
-        "text-size": 13,
+        "text-size": 11,
         "text-letter-spacing": 0.35,
         "symbol-sort-key": ["*", -1, ["get", "area"]] as any,
       },
+      // Outside the playable area: present for bearings, but half-voiced.
       paint: {
         "text-color": SEPIA_HEX,
-        "text-opacity": 0.95,
+        "text-opacity": 0.45,
         "text-halo-color": PAPER,
-        "text-halo-width": 1.9,
+        "text-halo-width": 1.4,
       },
     },
     {
