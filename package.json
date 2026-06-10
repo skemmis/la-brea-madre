@@ -9,12 +9,13 @@
     "build": "tsx scripts/build.ts",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
-    "test": "node --import tsx --test --test-concurrency=1 \"shared/**/*.test.ts\" \"server/**/*.test.ts\"",
+    "test": "node --import tsx --test --test-concurrency=1 \"shared/**/*.test.ts\" \"server/**/*.test.ts\" \"sim/**/*.test.ts\"",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
     "pipeline:wells": "tsx scripts/seedWells.ts",
-    "pipeline:hexes": "tsx scripts/initHexes.ts"
+    "pipeline:hexes": "tsx scripts/initHexes.ts",
+    "sim": "tsx sim/run.ts"
   },
   "dependencies": {
     "@deck.gl/core": "^9.1.0",
