@@ -120,12 +120,12 @@ export interface SimQuake {
   lng: number;
 }
 
-/** ~88 M1.5+ a year near the basin, magnitudes exponentially rarer with size. */
+/** ~233 M1.0+ a year near the basin, magnitudes exponentially rarer with size. */
 export function sampleQuakes(rng: Rng): SimQuake[] {
   const out: SimQuake[] = [];
-  const n = poisson(rng, 88 / 365);
+  const n = poisson(rng, 233 / 365);
   for (let i = 0; i < n; i++) {
-    const mag = Math.min(4.5, 1.5 - Math.log(Math.max(1e-9, rng())) / 2.86);
+    const mag = Math.min(4.5, 1.0 - Math.log(Math.max(1e-9, rng())) / 2.2);
     const r = 40 * Math.sqrt(rng()); // uniform over the 40 km disk
     const theta = rng() * Math.PI * 2;
     out.push({

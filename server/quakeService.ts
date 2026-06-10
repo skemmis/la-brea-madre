@@ -15,7 +15,7 @@ import { distanceKm, quakeDamageAt, quakeRadiusKm, quakePeakDamage } from "./qua
 
 const CENTER = { lat: 34.05, lng: -118.4 };
 const RADIUS_KM = 60; // poll window: the basin and its faults, incl. offshore
-const MIN_MAG = 1.5;
+const MIN_MAG = 1.0; // micro-tremors included — frequent, tiny footprints
 
 function todayPT(): string {
   return new Date()
@@ -61,11 +61,13 @@ export async function pollQuakes(): Promise<{ fetched: number; inserted: number 
 
   // Daily series for the exchange: quakes per PT day, today included (the
   // market settles on "did the Madre stir", so same-day counts matter).
+  // The Madre market asks about real stirs (M1.5+); micro-tremors are
+  // journaled for damage and the map, but don't settle the market.
   const { rows } = await pool.query(
     `SELECT to_char(occurred_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS day,
             count(*) AS n
      FROM quake
-     WHERE occurred_at > now() - interval '40 days'
+     WHERE occurred_at > now() - interval '40 days' AND mag >= 1.5
      GROUP BY 1`
   );
   const byDay = new Map<string, number>((rows as any[]).map((r) => [r.day, Number(r.n)]));
