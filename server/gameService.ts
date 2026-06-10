@@ -28,6 +28,7 @@ import {
   type PlayerId,
 } from "@shared/core";
 import { getPipelineMeta } from "./storage";
+import { consumeQuakeDamage } from "./quakeService";
 
 const SINGLETON = "singleton";
 
@@ -407,6 +408,10 @@ export async function runTick(): Promise<{ totalYield: number; cells: number }> 
   const { state, config } = await getOrInitGame();
   const owned = Object.keys(state.hexes).filter((h) => state.hexes[h].ownerId);
   const events = await buildEvents(owned);
+  // The Madre's bill: unapplied quakes become damage on owned parcels.
+  for (const q of await consumeQuakeDamage(owned)) {
+    events.push({ h3: q.h3, kind: "quake", magnitude: q.damage });
+  }
   // The weekly free Work Order arrives with Monday's tick.
   const weeklyFree = new Date(`${todayPT()}T12:00:00Z`).getUTCDay() === 1;
   const next = coreTick(state, config, events, { weeklyFree });

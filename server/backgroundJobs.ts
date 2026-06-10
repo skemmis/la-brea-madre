@@ -17,6 +17,7 @@ import {
   runDeadAnimalCensus,
 } from "./dataPipeline";
 import { rollExchangeDay, settleDue } from "./exchangeService";
+import { pollQuakes } from "./quakeService";
 import { getMetricSeries } from "./storage";
 
 function ptMidnightCron() {
@@ -107,6 +108,16 @@ export function startBackgroundJobs() {
     }
   });
 
+  // The Madre's seismograph: poll USGS every 30 minutes (free, keyless).
+  cron.schedule("*/30 * * * *", async () => {
+    try {
+      const r = await pollQuakes();
+      if (r.inserted) console.log(`[quake] ${r.inserted} new quake(s) journaled.`);
+    } catch (err) {
+      console.error("[quake] Poll error:", err);
+    }
+  });
+
   // One shot shortly after boot: if the cohort series are missing (first
   // deploy of the live floor), backfill them so today's board can open in
   // full; then roll the exchange day — which also settles any legacy
@@ -125,6 +136,7 @@ export function startBackgroundJobs() {
         console.log("[exchange] Neighborhood series missing — backfilling...");
         await runNeighborhoodHistory();
       }
+      await pollQuakes().catch((e) => console.error("[quake] Boot poll error:", e));
       const r = await rollExchangeDay();
       console.log(`[exchange] Boot roll: day ${r.day}, settled ${r.settled}.`);
     } catch (err) {

@@ -360,6 +360,16 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
   const [layerId, setLayerId] = useState<LayerId>("ownership");
   const layer = getLayer(layerId);
 
+  // The last 48h of shaking, drawn as heat rings on every layer.
+  const { data: quakes = [] } = useQuery<
+    { id: string; mag: number; lat: number; lng: number; radiusKm: number; place: string | null }[]
+  >({
+    queryKey: ["/api/map/quakes"],
+    queryFn: () => apiRequest("GET", "/api/map/quakes"),
+    refetchInterval: 5 * 60_000,
+    staleTime: 4 * 60_000,
+  });
+
   // Yesterday's dead-animal pickups, plotted as glowing dots on the carrion
   // layer — the exact report locations, not the hex aggregate. (Experimental.)
   const { data: carrion } = useQuery<{ date: string; points: { lng: number; lat: number }[] }>({
@@ -484,15 +494,33 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
     ];
   }, [carrion, layerId]);
 
+  // Quake heat: three concentric washes per shake — ochre into brick at the
+  // epicenter, sized by the felt radius. The Madre's signature on the sheet.
+  const quakeLayers = useMemo(() => {
+    if (!quakes.length) return [];
+    const common = {
+      data: quakes,
+      getPosition: (q: { lng: number; lat: number }) => [q.lng, q.lat] as [number, number],
+      radiusUnits: "meters" as const,
+      stroked: false,
+      pickable: false,
+    };
+    return [
+      new ScatterplotLayer({ id: "quake-outer", ...common, getRadius: (q: any) => q.radiusKm * 1000, getFillColor: [168, 112, 26, 26] }),
+      new ScatterplotLayer({ id: "quake-mid", ...common, getRadius: (q: any) => q.radiusKm * 450, getFillColor: [166, 84, 44, 44] }),
+      new ScatterplotLayer({ id: "quake-core", ...common, getRadius: (q: any) => q.radiusKm * 120, getFillColor: [166, 60, 44, 90] }),
+    ];
+  }, [quakes]);
+
   useEffect(() => {
     overlayRef.current?.setProps({
-      layers: [hexLayer, ...carrionGlowLayers],
+      layers: [quakeLayers, hexLayer, ...carrionGlowLayers].flat(),
       onHover: ({ object }) => {
         const canvas = mapRef.current?.getCanvas();
         if (canvas) canvas.style.cursor = object ? "pointer" : "";
       },
     });
-  }, [hexLayer, carrionGlowLayers]);
+  }, [hexLayer, carrionGlowLayers, quakeLayers]);
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative", background: OCEAN }}>

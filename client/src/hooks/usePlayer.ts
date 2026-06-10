@@ -72,6 +72,19 @@ export function useExploitHex() {
   });
 }
 
+export function useRepairHex() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (h3Index: string) =>
+      apiRequest("POST", "/api/territory/repair", { h3Index }),
+    onSuccess: () => {
+      invalidateTerritory(qc);
+      toast.success("Crews dispatched — the parcel stands repaired.");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useContestHex() {
   const qc = useQueryClient();
   return useMutation({

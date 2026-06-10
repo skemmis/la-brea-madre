@@ -266,6 +266,16 @@ export function boardSpecsFor(day: string): BoardSpec[] {
     }
   );
 
+  // ── The Madre's special: did the ground move today? ──
+  specs.push({
+    specId: "madre",
+    kind: "overunder",
+    category: "specials",
+    metricA: "quakes",
+    question: () => `Will the Madre stir today — any M1.5+ quake in the basin?`,
+    rules: "Settles YES if the USGS records at least one M1.5+ earthquake within 60 km of central Los Angeles during the PT day. Counted from the USGS realtime catalog.",
+  });
+
   // ── The weekday special ──
   specs.push({
     specId: "weekday",

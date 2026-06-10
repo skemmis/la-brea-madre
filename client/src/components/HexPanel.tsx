@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Zap, ArrowUp, Flame, Swords, Shield } from "lucide-react";
+import { X, Zap, ArrowUp, Flame, Swords, Shield, Hammer } from "lucide-react";
 import type { HexData } from "./HexMap";
 import {
   useClaimHex,
@@ -7,6 +7,7 @@ import {
   useExploitHex,
   useContestHex,
   useDefendHex,
+  useRepairHex,
 } from "../hooks/usePlayer";
 
 interface Props {
@@ -29,6 +30,7 @@ export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, on
   const exploit = useExploitHex();
   const contest = useContestHex();
   const defend = useDefendHex();
+  const repair = useRepairHex();
   const [bid, setBid] = useState(200);
 
   const isOwned = !!hex.ownerId;
@@ -157,6 +159,18 @@ export default function HexPanel({ hex, viewerUserId, workOrders, viewerCash, on
               >
                 <ArrowUp size={12} />
                 UPGRADE LVL {hex.upgradeLevel + 1} — 1 ORDER + {usd(UPGRADE_COST[hex.upgradeLevel])}
+              </button>
+            )}
+
+            {/* Repair a shaken parcel */}
+            {isMine && hex.degradation > 0 && hasOrders && (
+              <button
+                onClick={() => repair.mutate(hex.h3Index)}
+                disabled={repair.isPending || viewerCash < hex.degradation * 2}
+                className="btn-ink w-full flex items-center gap-2 px-3 py-2 text-xs font-bold"
+              >
+                <Hammer size={12} />
+                REPAIR — 1 ORDER + {usd(hex.degradation * 2)}
               </button>
             )}
 

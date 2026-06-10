@@ -75,6 +75,16 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // The last 48h of shaking, for the map's quake overlay.
+  app.get("/api/map/quakes", async (_req: Request, res: Response) => {
+    try {
+      const { recentQuakes } = await import("./quakeService");
+      res.json(await recentQuakes());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Citation hotspots for today
   app.get("/api/map/hotspots", async (req: Request, res: Response) => {
     const date = (req.query.date as string) || todayPT();
@@ -145,6 +155,13 @@ export function registerRoutes(app: Express) {
     const { h3Index } = req.body;
     if (!h3Index) return res.status(400).json({ error: "h3Index required" });
     return runOrderAction(req, res, { type: "upgrade", h3: h3Index });
+  });
+
+  // Repair a shaken parcel: 1 order + $ per point of degradation.
+  app.post("/api/territory/repair", requireAuth, (req: Request, res: Response) => {
+    const { h3Index } = req.body;
+    if (!h3Index) return res.status(400).json({ error: "h3Index required" });
+    return runOrderAction(req, res, { type: "repair", h3: h3Index });
   });
 
   // Toggle exploit mode — a free stance, not the daily action.
