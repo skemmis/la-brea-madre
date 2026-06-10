@@ -28,7 +28,7 @@ export default function DeckPage() {
   const boost = fx && (fx.payoutMult > 1 || fx.loserRefund > 0);
 
   return (
-    <div className="min-h-screen w-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)]">
+    <div className="h-screen w-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)]">
       <header className="flex items-center justify-between px-5 py-4 border-b-2 border-[var(--ink-strong)]">
         <div>
           <div className="text-[9px] text-[var(--sepia-soft)]" style={{ letterSpacing: "0.3em" }}>

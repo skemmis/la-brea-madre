@@ -49,7 +49,7 @@ export default function MarketPage() {
   const totalVolume = markets.reduce((a, m) => a + m.volume, 0);
 
   return (
-    <div className="min-h-screen w-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)]">
+    <div className="h-screen w-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)]">
       <ExchangeMasthead active="floor" />
 
       <main className="max-w-3xl mx-auto px-5 py-7 pb-20">

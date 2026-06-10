@@ -23,7 +23,7 @@ export default function MarketDetailPage() {
   const { data, isLoading } = useMarketDetail(params?.id ?? null);
 
   return (
-    <div className="min-h-screen w-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)]">
+    <div className="h-screen w-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)]">
       <ExchangeMasthead active="floor" />
 
       <main className="max-w-4xl mx-auto px-5 py-6 pb-20">

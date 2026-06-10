@@ -36,7 +36,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)] p-8">
+    <div className="h-screen overflow-y-auto bg-[var(--paper)] text-[var(--sepia)] p-8">
       <div className="max-w-lg mx-auto space-y-6">
         <div className="flex items-center justify-between border-b-2 border-[var(--ink-strong)] pb-3">
           <h1 className="plate-title text-sm text-[var(--ink)]">CITY WORKS DEPARTMENT</h1>
