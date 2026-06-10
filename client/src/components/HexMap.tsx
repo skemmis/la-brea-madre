@@ -83,8 +83,9 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
       source: "coastline",
       paint: { "line-color": INK_HEX, "line-width": 1.2, "line-opacity": 0.5 },
     },
-    // The surface-street grid: fine ink, weighted by class, fading up as you
-    // zoom out so the city doesn't smear into a solid block of blue.
+    // The street grid, printed like the reference sheets: arterials (t≥2)
+    // are the bold named skeleton of the city; the local grid is whisper-
+    // faint unlabeled texture between them.
     {
       id: "streets",
       type: "line",
@@ -94,14 +95,14 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
         "line-color": INK_HEX,
         "line-width": [
           "interpolate", ["exponential", 1.6], ["zoom"],
-          9, classed([0.25, 0.3, 0.4, 0.5]),
-          12, classed([0.4, 0.5, 0.7, 0.9]),
-          14, classed([0.8, 1.0, 1.5, 2.0]),
+          9, classed([0.2, 0.25, 0.6, 0.9]),
+          12, classed([0.35, 0.45, 1.1, 1.5]),
+          14, classed([0.7, 0.9, 2.2, 3.0]),
         ] as any,
         "line-opacity": [
           "interpolate", ["linear"], ["zoom"],
-          9, classed([0.11, 0.16, 0.28, 0.38]),
-          11.5, classed([0.27, 0.37, 0.47, 0.59]),
+          9, classed([0.07, 0.09, 0.42, 0.55]),
+          11.5, classed([0.18, 0.22, 0.55, 0.68]),
         ] as any,
       },
     },
@@ -126,41 +127,19 @@ const SHEET_STYLE: maplibregl.StyleSpecification = {
       paint: { "line-color": INK_HEX, "line-width": 2, "line-opacity": 0.92 },
     },
     // ── Typography ──────────────────────────────────────────────────────────
-    // Street names, set along the streets themselves. Arterials first, the
-    // local grid only once you're close enough to read it.
-    {
-      id: "street-labels-minor",
-      type: "symbol",
-      source: "streets",
-      minzoom: 13,
-      filter: ["<=", ["get", "t"], 1] as any,
-      layout: {
-        "symbol-placement": "line",
-        "text-field": ["get", "name"] as any,
-        "text-font": SERIF,
-        "text-size": ["interpolate", ["linear"], ["zoom"], 13, 9, 14, 10.5] as any,
-        "text-letter-spacing": 0.05,
-        "symbol-spacing": 400,
-        "text-padding": 4,
-      },
-      paint: {
-        "text-color": INK_HEX,
-        "text-opacity": 0.72,
-        "text-halo-color": PAPER,
-        "text-halo-width": 1.1,
-      },
-    },
+    // Only arterials carry names, like the reference sheets — the local grid
+    // is texture, not information.
     {
       id: "street-labels-major",
       type: "symbol",
       source: "streets",
-      minzoom: 11.2,
+      minzoom: 10.5,
       filter: [">=", ["get", "t"], 2] as any,
       layout: {
         "symbol-placement": "line",
         "text-field": ["get", "name"] as any,
         "text-font": SERIF,
-        "text-size": ["interpolate", ["linear"], ["zoom"], 11.2, 9.5, 14, 12.5] as any,
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10.5, 9.5, 14, 13] as any,
         "text-letter-spacing": 0.06,
         "symbol-spacing": 420,
         "text-padding": 4,
