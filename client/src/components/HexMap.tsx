@@ -327,6 +327,7 @@ export interface HexData {
   lastTickYield: number;
   citationToday?: number;
   fineDollarsPerDay?: number;
+  shakePoints?: number;
   deadAnimalPerMonth?: number;
   ownerName?: string;
   ambient: {
@@ -366,15 +367,21 @@ export default function HexMap({ viewerUserId, onSelectHex, selectedHex }: Props
   const [layerId, setLayerId] = useState<LayerId>("ownership");
   const layer = getLayer(layerId);
 
-  // The last 48h of shaking, drawn as heat rings on every layer.
-  const { data: quakes = [] } = useQuery<
+  // 30 days of shaking: fresh quakes (48h) ring on every layer; the seismic
+  // layer shows the whole month's epicenters over the per-hex heat.
+  const { data: allQuakes = [] } = useQuery<
     { id: string; mag: number; lat: number; lng: number; radiusKm: number; place: string | null; occurredAt: string }[]
   >({
-    queryKey: ["/api/map/quakes"],
-    queryFn: () => apiRequest("GET", "/api/map/quakes"),
+    queryKey: ["/api/map/quakes", 30],
+    queryFn: () => apiRequest("GET", "/api/map/quakes?days=30"),
     refetchInterval: 5 * 60_000,
     staleTime: 4 * 60_000,
   });
+  const freshQuakes = useMemo(
+    () => allQuakes.filter((q) => Date.now() - new Date(q.occurredAt).getTime() < 48 * 3_600_000),
+    [allQuakes]
+  );
+  const quakes = layerId === "seismic" ? allQuakes : freshQuakes;
 
   // Yesterday's dead-animal pickups, plotted as glowing dots on the carrion
   // layer — the exact report locations, not the hex aggregate. (Experimental.)

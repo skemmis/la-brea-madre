@@ -114,6 +114,34 @@ export async function consumeQuakeDamage(ownedH3: string[]): Promise<QuakeDamage
   return [...damage.entries()].map(([h3, dmg]) => ({ h3, damage: dmg }));
 }
 
+/**
+ * Per-hex shake heat over the trailing window: the summed damage each cell
+ * would take from every journaled quake — the seismic layer's metric.
+ */
+export async function shakeByHex(h3s: string[], days = 30): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!h3s.length) return out;
+  const quakes = await recentQuakes(days);
+  if (!quakes.length) return out;
+
+  const centers = h3s.map((h) => {
+    const [lat, lng] = cellToLatLng(h);
+    return { h3: h, lat, lng };
+  });
+  for (const q of quakes) {
+    const rKm = q.radiusKm;
+    const latPad = rKm / 111;
+    const lngPad = rKm / 92;
+    for (const c of centers) {
+      // Cheap box reject before the haversine.
+      if (Math.abs(c.lat - q.lat) > latPad || Math.abs(c.lng - q.lng) > lngPad) continue;
+      const dmg = quakeDamageAt(distanceKm(q.lat, q.lng, c.lat, c.lng), q.mag);
+      if (dmg > 0) out.set(c.h3, (out.get(c.h3) ?? 0) + dmg);
+    }
+  }
+  return out;
+}
+
 export interface QuakeView {
   id: string;
   mag: number;
@@ -126,10 +154,12 @@ export interface QuakeView {
   applied: boolean;
 }
 
-/** The last 48h of shaking, for the map overlay. */
-export async function recentQuakes(): Promise<QuakeView[]> {
+/** Recent shaking for the map: default the last 48h, up to 35 days. */
+export async function recentQuakes(days = 2): Promise<QuakeView[]> {
+  const d = Math.min(35, Math.max(1, days));
   const { rows } = await pool.query(
-    `SELECT * FROM quake WHERE occurred_at > now() - interval '48 hours' ORDER BY occurred_at DESC`
+    `SELECT * FROM quake WHERE occurred_at > now() - ($1 || ' days')::interval ORDER BY occurred_at DESC`,
+    [String(d)]
   );
   return (rows as any[]).map((q) => ({
     id: q.id,

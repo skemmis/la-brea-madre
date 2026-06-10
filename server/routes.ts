@@ -76,10 +76,11 @@ export function registerRoutes(app: Express) {
   });
 
   // The last 48h of shaking, for the map's quake overlay.
-  app.get("/api/map/quakes", async (_req: Request, res: Response) => {
+  app.get("/api/map/quakes", async (req: Request, res: Response) => {
     try {
       const { recentQuakes } = await import("./quakeService");
-      res.json(await recentQuakes());
+      const days = Number(req.query.days) || 2;
+      res.json(await recentQuakes(days));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

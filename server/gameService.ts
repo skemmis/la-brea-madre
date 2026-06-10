@@ -28,7 +28,7 @@ import {
   type PlayerId,
 } from "@shared/core";
 import { getPipelineMeta } from "./storage";
-import { consumeQuakeDamage } from "./quakeService";
+import { consumeQuakeDamage, shakeByHex } from "./quakeService";
 
 const SINGLETON = "singleton";
 
@@ -290,6 +290,7 @@ export interface MapHex {
   lastTickYield: number;
   citationToday: number;
   fineDollarsPerDay: number;
+  shakePoints: number;
   deadAnimalPerMonth: number;
   ownerName?: string;
   neighborhood: string | null;
@@ -328,6 +329,9 @@ export async function projectMap(): Promise<MapHex[]> {
       and(eq(hexCells.h3Index, citationDaily.h3Index), eq(citationDaily.date, today))
     );
 
+  // Seismic heat: damage each cell took from the last 30 days of quakes.
+  const shake = await shakeByHex(rows.map((r) => r.h3Index));
+
   // Owner display names, keyed by core PlayerId.
   const userRows = await db.select({ id: users.id, displayName: users.displayName }).from(users);
   const names: Record<string, string> = {};
@@ -352,6 +356,7 @@ export async function projectMap(): Promise<MapHex[]> {
       lastTickYield: lastYield[c.h3Index] ?? 0,
       citationToday: c.citationToday ?? 0,
       fineDollarsPerDay: Math.round((c.totalFineToday ?? 0) / citWindow),
+      shakePoints: shake.get(c.h3Index) ?? 0,
       // Monthly rate: res-9 cells are small enough that a daily rate rounds
       // to 0.0 for almost every cell.
       deadAnimalPerMonth: round1(((c.deadAnimalCount ?? 0) / daWindow) * 30),
