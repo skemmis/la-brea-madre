@@ -86,6 +86,8 @@ const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 const rng = makeRng(SEED);
 let defenderWins = 0;
+let anyRiteDecided = 0; // battles where erasing SOME single rite flips the deed
+let riteCardsPerBattle = 0;
 
 for (let k = 0; k < BATTLES; k++) {
   const [tname, terrain] = TERRAINS[k % TERRAINS.length];
@@ -120,9 +122,11 @@ for (let k = 0; k < BATTLES; k++) {
   record(dHand, "defender");
 
   // Clutch: re-resolve with each rited card silenced, one at a time.
+  let decidedHere = false;
   const probe = (hand: CardDef[], side: "attacker" | "defender", lane: number) => {
     const c = hand[lane];
     if (!c.rite) return;
+    riteCardsPerBattle++;
     const st = cards.get(c.id)!;
     st.ritePlays++;
     const mut = hand.slice();
@@ -133,7 +137,10 @@ for (let k = 0; k < BATTLES; k++) {
         : resolveBattle(aHand, mut, terrain, LANES);
     const laneFlipped = alt.lanes[lane].winner !== res.lanes[lane].winner || alt.lanes[lane].sunk !== res.lanes[lane].sunk;
     const battleFlipped = alt.winner !== res.winner;
-    if (battleFlipped) st.riteBattleFlips++;
+    if (battleFlipped) {
+      st.riteBattleFlips++;
+      decidedHere = true;
+    }
     if (laneFlipped) st.riteLaneFlips++;
     if (!laneFlipped && !battleFlipped) {
       // Did it at least move a number anywhere? If not, the rite was dead ink.
@@ -149,6 +156,7 @@ for (let k = 0; k < BATTLES; k++) {
     probe(aHand, "attacker", i);
     probe(dHand, "defender", i);
   }
+  if (decidedHere) anyRiteDecided++;
 }
 
 // ─── The report ───────────────────────────────────────────────────────────────
@@ -182,7 +190,11 @@ const meanBattleFlip = byClutch.reduce((a, r) => a + r.battle, 0) / byClutch.len
 console.log(
   `  (phoenix / medic / poach are PAID AT DAWN — in cards kept, healed, and stolen — and are not measured here)`
 );
-console.log(`  → a rite decides the deed in ${meanBattleFlip.toFixed(1)}% of its appearances on average\n`);
+console.log(`  → a rite decides the deed in ${meanBattleFlip.toFixed(1)}% of its appearances on average`);
+console.log(
+  `  → AT LEAST ONE rite decides the deed in ${((100 * anyRiteDecided) / BATTLES).toFixed(1)}% of all battles` +
+    ` (${(riteCardsPerBattle / BATTLES).toFixed(1)} rite cards on a typical table)\n`
+);
 
 // 2. Hard choices: context ranks.
 const contexts: string[] = [];
