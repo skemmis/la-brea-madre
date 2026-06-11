@@ -13,6 +13,7 @@ import {
   CATALOG,
   SAINTS,
   resolveBattle,
+  type SaintDef,
   AFFINITY_BONUS,
   type BattleMods,
   type BattleResult,
@@ -165,6 +166,19 @@ function riteText(c: CardDef): string {
     case "vengeance": return `VENGEANCE — when it falls, the grudge grows +${r.n} until the night ends`;
     case "rally": return `RALLY — when it wins, +${r.n} flows to the next lane`;
     case "omen": return `OMEN — the foe's next lane fights at −${r.n}`;
+  }
+}
+
+function saintText(s: SaintDef): string {
+  const e = s.effect;
+  switch (e.kind) {
+    case "tiebreaker": return "ties go to you — lanes AND the raid itself";
+    case "closer": return "your last-lane card fights twice (its power counts double)";
+    case "karma": return `+1 power to every lane per ${e.per} fossils in your gallery (max +${e.max})`;
+    case "jumper": return "your reckless cards that WIN their lane don't burn";
+    case "suitBoost": return `all your ${SUIT_STYLE[e.suit].label.toLowerCase()} cards +${e.n}, everywhere`;
+    case "ghost": return `your phoenixes +${e.n}`;
+    case "lostCause": return "a failed raid's stake comes home anyway";
   }
 }
 
@@ -371,13 +385,13 @@ export default function ArenaPage() {
                 <div className="text-[9px] text-[var(--sepia-soft)] mb-2" style={{ letterSpacing: "0.25em" }}>
                   {label} — DASHBOARD SAINTS ({chosen.length}/3 · forged from fossils; the back room lends freely)
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid sm:grid-cols-3 gap-1.5">
                   {SAINTS.map((st) => {
                     const on = chosen.includes(st.id);
                     return (
                       <button
                         key={st.id}
-                        title={`${st.flavor} (${st.fossilCost} fossils)`}
+                        title={st.flavor}
                         onClick={() =>
                           setChosen(
                             on
@@ -387,15 +401,23 @@ export default function ArenaPage() {
                                 : chosen
                           )
                         }
-                        className={`px-2 py-1 text-[8px] border ${
+                        className={`text-left px-2 py-1.5 border ${
                           on
-                            ? "border-[var(--ink-strong)] font-bold bg-[var(--paper-deep)]"
-                            : "border-[var(--ink-faint)] opacity-60 hover:opacity-100"
+                            ? "border-[var(--ink-strong)] bg-[var(--paper-deep)]"
+                            : "border-[var(--ink-faint)] opacity-70 hover:opacity-100"
                         }`}
-                        style={{ letterSpacing: "0.12em", color: "var(--ink)" }}
+                        style={{ color: "var(--ink)" }}
                       >
-                        {on ? "✚ " : ""}
-                        {st.name}
+                        <span className="block text-[8px] font-bold" style={{ letterSpacing: "0.12em" }}>
+                          {on ? "✚ " : ""}
+                          {st.name}
+                        </span>
+                        <span className="block text-[8px] leading-snug text-[var(--sepia)] mt-0.5">
+                          {saintText(st)}
+                        </span>
+                        <span className="block text-[7px] text-[var(--sepia-soft)] mt-0.5" style={{ letterSpacing: "0.15em" }}>
+                          {st.fossilCost} FOSSILS · {st.flavor}
+                        </span>
                       </button>
                     );
                   })}
