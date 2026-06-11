@@ -107,12 +107,12 @@ function armed(cfg: GameConfig, attackerCards: string[], defenderCards: string[]
   return s;
 }
 
-test("a won raid takes the deed and pays the loser half their own price", () => {
+test("a won raid takes the deed and pays the loser 65% of the county valuation", () => {
   const cfg = raidConfig();
   let s = armed(cfg, Array(5).fill("u12"), Array(5).fill("b04")); // 9s vs 3+3s
   const cashBefore = { a: s.players["1"].crude, d: s.players["2"].crude };
   s = applyAction(s, cfg, "1", { type: "raid", h3: CENTER });
-  assert.equal(s.players["1"].crude, cashBefore.a - 50, "escrow = half the $100 ask");
+  assert.equal(s.players["1"].crude, cashBefore.a - 65, "escrow = 65% of the $100 valuation");
   s = tick(s, cfg, []);
   assert.equal(s.hexes[CENTER].ownerId, "1", "the deed falls");
   assert.ok(s.lastReport!.raids![0].attackerWon);
@@ -129,8 +129,8 @@ test("a failed raid forfeits the stake; the fallen attackers burn — rares to f
   assert.equal(s.hexes[CENTER].ownerId, "2", "the walls hold");
   const taxA = s.lastReport!.perPlayer["1"].taxPaid;
   const taxD = s.lastReport!.perPlayer["2"].taxPaid;
-  assert.equal(s.players["1"].crude, cashBefore.a - 25 - taxA, "stake lost, remainder refunded");
-  assert.equal(s.players["2"].crude, cashBefore.d + 25 - taxD, "the defender keeps the stake");
+  assert.equal(s.players["1"].crude, cashBefore.a - 30 - taxA, "stake lost, remainder refunded");
+  assert.equal(s.players["2"].crude, cashBefore.d + 30 - taxD, "the defender keeps the stake");
   // You declared the war: your fallen don't come home.
   assert.equal(s.players["1"].binder!.length, 0, "all five attackers burned");
   assert.equal(s.players["1"].fossils!.length, 5, "rares leave fossils, dated");
@@ -264,7 +264,7 @@ test("the ripple flows: vengeance from the fallen, rallies from the winners, ome
     NOWHERE,
     2
   );
-  assert.equal(v.lanes[1].attackerPower, 5 + 4, "the jolt arrives angry");
+  assert.equal(v.lanes[1].attackerPower, 5 + 3, "the jolt arrives angry");
   assert.equal(v.lanes[1].winner, "attacker", "vengeance breaks the mirror match");
 
   // THE UPDRAFT (2, rally 3) beats the METER (1); the next lane lifts.

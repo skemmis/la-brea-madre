@@ -68,8 +68,8 @@ export interface CardDef {
 export const CATALOG: CardDef[] = [
   // BLACK — the under. Kill quickly, no frills. Grief flows downhill.
   { id: "b01", name: "HAIRLINE CRACK", suit: "black", power: 1, weight: 1, rite: { kind: "surge", n: 2 }, rarity: "common", flavor: "Started in the plaster. Didn't stop there." },
-  { id: "b13", name: "FORESHOCK", suit: "black", power: 1, weight: 1, rite: { kind: "vengeance", n: 4 }, rarity: "common", flavor: "Never the main event. An announcement of one." },
-  { id: "b14", name: "CANDLES ON THE GUARDRAIL", suit: "black", power: 2, weight: 2, rite: { kind: "vengeance", n: 3 }, rarity: "common", flavor: "Lit for the fallen. Felt by the next." },
+  { id: "b13", name: "FORESHOCK", suit: "black", power: 1, weight: 1, rite: { kind: "vengeance", n: 3 }, rarity: "common", flavor: "Never the main event. An announcement of one." },
+  { id: "b14", name: "CANDLES ON THE GUARDRAIL", suit: "black", power: 2, weight: 2, rite: { kind: "vengeance", n: 2 }, rarity: "common", flavor: "Lit for the fallen. Felt by the next." },
   { id: "b02", name: "TAR SEEP", suit: "black", power: 2, weight: 3, rite: { kind: "reckless", n: 2 }, rarity: "common", flavor: "It was here before the street. It will be here after." },
   { id: "b03", name: "SEISMOGRAPH STRIP", suit: "black", power: 3, weight: 2, rite: { kind: "surge", n: 3 }, rarity: "common", flavor: "The needle wrote your name in its sleep." },
   { id: "b04", name: "CHANDELIER WARNING", suit: "black", power: 3, weight: 2, rarity: "common", flavor: "The first to know is always the glass." },

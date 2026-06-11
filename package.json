@@ -15,7 +15,9 @@
     "db:studio": "drizzle-kit studio",
     "pipeline:wells": "tsx scripts/seedWells.ts",
     "pipeline:hexes": "tsx scripts/initHexes.ts",
-    "sim": "tsx sim/run.ts"
+    "sim": "tsx sim/run.ts",
+    "evals": "tsx sim/evals.ts",
+    "fights": "tsx sim/fights.ts"
   },
   "dependencies": {
     "@deck.gl/core": "^9.1.0",
