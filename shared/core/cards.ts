@@ -68,8 +68,8 @@ export interface CardDef {
 export const CATALOG: CardDef[] = [
   // BLACK — the under. Kill quickly, no frills. Grief flows downhill.
   { id: "b01", name: "HAIRLINE CRACK", suit: "black", power: 1, weight: 1, rite: { kind: "surge", n: 2 }, rarity: "common", flavor: "Started in the plaster. Didn't stop there." },
-  { id: "b13", name: "FORESHOCK", suit: "black", power: 1, weight: 1, rite: { kind: "vengeance", n: 3 }, rarity: "common", flavor: "Never the main event. An announcement of one." },
-  { id: "b14", name: "CANDLES ON THE GUARDRAIL", suit: "black", power: 2, weight: 2, rite: { kind: "vengeance", n: 2 }, rarity: "common", flavor: "Lit for the fallen. Felt by the next." },
+  { id: "b13", name: "FORESHOCK", suit: "black", power: 1, weight: 1, rite: { kind: "vengeance", n: 4 }, rarity: "common", flavor: "Never the main event. An announcement of one." },
+  { id: "b14", name: "CANDLES ON THE GUARDRAIL", suit: "black", power: 2, weight: 2, rite: { kind: "vengeance", n: 3 }, rarity: "common", flavor: "Lit for the fallen. Felt by the next." },
   { id: "b02", name: "TAR SEEP", suit: "black", power: 2, weight: 3, rite: { kind: "reckless", n: 2 }, rarity: "common", flavor: "It was here before the street. It will be here after." },
   { id: "b03", name: "SEISMOGRAPH STRIP", suit: "black", power: 3, weight: 2, rite: { kind: "surge", n: 3 }, rarity: "common", flavor: "The needle wrote your name in its sleep." },
   { id: "b04", name: "CHANDELIER WARNING", suit: "black", power: 3, weight: 2, rarity: "common", flavor: "The first to know is always the glass." },
@@ -84,23 +84,23 @@ export const CATALOG: CardDef[] = [
 
   // BLUE — the middle. Protection, counterspells, paperwork that precedes you.
   { id: "u01", name: "EXPIRED METER", suit: "blue", power: 1, weight: 1, rite: { kind: "surge", n: 2 }, rarity: "common", flavor: "00:00, blinking, forever." },
-  { id: "u13", name: "FINAL NOTICE", suit: "blue", power: 1, weight: 1, rite: { kind: "omen", n: 2 }, rarity: "common", flavor: "The envelope weighs nothing. The contents weigh on you." },
+  { id: "u13", name: "FINAL NOTICE", suit: "blue", power: 2, weight: 1, rite: { kind: "omen", n: 2 }, rarity: "common", flavor: "The envelope weighs nothing. The contents weigh on you." },
   { id: "u02", name: "THE METER MAID", suit: "blue", power: 2, weight: 2, rite: { kind: "bulwark", n: 3 }, rarity: "common", flavor: "She was writing your number before you parked." },
   { id: "u14", name: "CERTIFIED LETTER", suit: "blue", power: 3, weight: 3, rite: { kind: "omen", n: 3 }, rarity: "uncommon", flavor: "Signature required. Resistance optional, noted." },
   { id: "u03", name: "DMV BASILISK", suit: "blue", power: 3, weight: 4, rite: { kind: "ward" }, rarity: "common", flavor: "Take a number. Turn to stone." },
   { id: "u04", name: "STREET SWEEPER, TUESDAY", suit: "blue", power: 4, weight: 4, rarity: "common", flavor: "You knew. The sign knew you knew." },
   { id: "u05", name: "RED CURB PROPHET", suit: "blue", power: 4, weight: 3, rite: { kind: "surge", n: 2 }, rarity: "common", flavor: "He painted it himself. It counts." },
   { id: "u06", name: "ORDINANCE 80.69", suit: "blue", power: 3, weight: 5, rite: { kind: "ward" }, rarity: "uncommon", flavor: "Subsection (c) voids whatever you were about to do." },
-  { id: "u07", name: "THE BOOT", suit: "blue", power: 5, weight: 6, rite: { kind: "bulwark", n: 2 }, rarity: "uncommon", flavor: "Yellow. Final." },
+  { id: "u07", name: "THE BOOT", suit: "blue", power: 5, weight: 6, rite: { kind: "bulwark", n: 3 }, rarity: "uncommon", flavor: "Yellow. Final." },
   { id: "u08", name: "TOW TRUCK SANTA GERTRUDIS", suit: "blue", power: 5, weight: 5, rite: { kind: "predator", vs: "white", n: 3 }, rarity: "uncommon", flavor: "Patron saint of the impound lot. Tows the dead too." },
   { id: "u09", name: "PARKING ENFORCEMENT HELICOPTER", suit: "blue", power: 6, weight: 3, rarity: "uncommon", flavor: "There is no budget line for it. It flies anyway." },
   { id: "u10", name: "NOTARY OF THE CURB", suit: "blue", power: 6, weight: 5, rite: { kind: "ward" }, rarity: "rare", flavor: "Her stamp annuls miracles." },
-  { id: "u11", name: "THE 405 AT DUSK", suit: "blue", power: 7, weight: 9, rite: { kind: "bulwark", n: 2 }, rarity: "rare", flavor: "Nothing moves. Everything holds." },
+  { id: "u11", name: "THE 405 AT DUSK", suit: "blue", power: 7, weight: 9, rite: { kind: "bulwark", n: 3 }, rarity: "rare", flavor: "Nothing moves. Everything holds." },
   { id: "u12", name: "THE GREAT GRIDLOCK", suit: "blue", power: 9, weight: 9, rarity: "mythic", flavor: "One day it simply did not unlock." },
 
   // WHITE — the upper. The flock manages the game itself. What rises, lifts.
   { id: "w01", name: "ROADSIDE POSSUM", suit: "white", power: 1, weight: 1, rite: { kind: "flock", n: 1 }, rarity: "common", flavor: "It was already playing dead. Now it's playing." },
-  { id: "w13", name: "THE UPDRAFT", suit: "white", power: 2, weight: 1, rite: { kind: "rally", n: 3 }, rarity: "common", flavor: "What rises first lifts the rest." },
+  { id: "w13", name: "THE UPDRAFT", suit: "white", power: 3, weight: 1, rite: { kind: "rally", n: 3 }, rarity: "common", flavor: "What rises first lifts the rest." },
   { id: "w02", name: "PIGEON JURY", suit: "white", power: 2, weight: 2, rite: { kind: "flock", n: 1 }, rarity: "common", flavor: "Twelve of them. All guilty." },
   { id: "w14", name: "DAWN CHORUS", suit: "white", power: 3, weight: 2, rite: { kind: "rally", n: 2 }, rarity: "common", flavor: "The first note wins the morning." },
   { id: "w03", name: "RACCOON IN THE WALLS", suit: "white", power: 3, weight: 3, rite: { kind: "surge", n: 2 }, rarity: "common", flavor: "The county was called. The county did not come." },

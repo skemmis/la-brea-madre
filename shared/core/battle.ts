@@ -59,7 +59,8 @@ interface SideState {
   cards: CardDef[];
   mods: BattleMods;
   defending: boolean;
-  carry: number; // vengeance/rally rolling into my next lane
+  carry: number; // a rally rolling into my next lane (one lane only)
+  grudge: number; // vengeance: stacks as my martyrs fall — the night remembers
   curse: number; // the foe's omen weighing on my next lane
 }
 
@@ -99,10 +100,14 @@ function effectivePower(
     }
   }
 
-  // What rippled in from the previous lane.
+  // What rippled in from the lanes before.
   if (side.carry > 0) {
     p += side.carry;
-    notes.push(`${card.name} inherits +${side.carry} from the lane before`);
+    notes.push(`${card.name} rides the rally +${side.carry}`);
+  }
+  if (side.grudge > 0) {
+    p += side.grudge;
+    notes.push(`${card.name} carries the grudge +${side.grudge}`);
   }
   if (side.curse > 0) {
     p = Math.max(0, p - side.curse);
@@ -152,14 +157,14 @@ function effectivePower(
   return p;
 }
 
-/** After a lane settles, queue what ripples into the next one. */
+/** After a lane settles, queue what ripples onward. */
 function ripple(side: SideState, foe: SideState, card: CardDef | null, warded: boolean, won: boolean, lost: boolean, notes: string[]): void {
-  side.carry = 0; // carries last exactly one lane
+  side.carry = 0; // rallies last exactly one lane
   if (!card || !card.rite || warded) return;
   const r = card.rite;
   if (r.kind === "vengeance" && lost) {
-    side.carry = r.n;
-    notes.push(`${card.name} falls — vengeance +${r.n} flows to the next lane`);
+    side.grudge += r.n;
+    notes.push(`${card.name} falls — the grudge grows +${r.n} until avenged`);
   } else if (r.kind === "rally" && won) {
     side.carry = r.n;
     notes.push(`${card.name} rallies — +${r.n} flows to the next lane`);
@@ -180,8 +185,8 @@ export function resolveBattle(
   lanes: number,
   mods: { attacker?: BattleMods; defender?: BattleMods } = {}
 ): BattleResult {
-  const a: SideState = { cards: attacker, mods: mods.attacker ?? { saints: [], fossils: 0 }, defending: false, carry: 0, curse: 0 };
-  const d: SideState = { cards: defender, mods: mods.defender ?? { saints: [], fossils: 0 }, defending: true, carry: 0, curse: 0 };
+  const a: SideState = { cards: attacker, mods: mods.attacker ?? { saints: [], fossils: 0 }, defending: false, carry: 0, grudge: 0, curse: 0 };
+  const d: SideState = { cards: defender, mods: mods.defender ?? { saints: [], fossils: 0 }, defending: true, carry: 0, grudge: 0, curse: 0 };
   const laneResults: LaneResult[] = [];
   let aLanes = 0;
   let dLanes = 0;

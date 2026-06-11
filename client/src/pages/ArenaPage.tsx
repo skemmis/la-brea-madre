@@ -11,9 +11,10 @@ import { useMemo, useRef, useState } from "react";
 import ExchangeMasthead from "../components/ExchangeMasthead";
 import {
   CATALOG,
+  SAINTS,
   resolveBattle,
   AFFINITY_BONUS,
-  COUNTER_BONUS,
+  type BattleMods,
   type BattleResult,
   type CardDef,
   type Suit,
@@ -51,6 +52,7 @@ function build(score: (c: CardDef) => number, filter?: (c: CardDef) => boolean):
 const RITE_VALUE: Record<string, number> = {
   surge: 2, reckless: 2, sink: 1.5, ward: 2.5, bulwark: 2,
   flock: 2, phoenix: 2.5, medic: 2, poach: 3, predator: 2,
+  vengeance: 2.5, rally: 2.5, omen: 2.5,
 };
 
 const SCHOOLS: Record<string, { blurb: string; binder: () => CardDef[] }> = {
@@ -80,6 +82,15 @@ const SCHOOLS: Record<string, { blurb: string; binder: () => CardDef[] }> = {
   GOODSTUFF: {
     blurb: "The five biggest numbers, every time. No plan, just tonnage.",
     binder: () => build((c) => c.power),
+  },
+  "THE PROCESSION": {
+    blurb: "Light martyrs open; the grudge builds; heavy closers collect.",
+    binder: () =>
+      build((c) =>
+        c.rite && ["vengeance", "rally", "omen"].includes(c.rite.kind)
+          ? 12
+          : c.power + (c.weight >= 6 ? 2 : 0)
+      ),
   },
 };
 
@@ -151,6 +162,9 @@ function riteText(c: CardDef): string {
     case "medic": return "MEDIC — if it survives, heals a wounded card";
     case "poach": return "POACH — keeps what it beats, forever";
     case "predator": return `PREDATOR +${r.n} vs ${SUIT_STYLE[r.vs].label.toLowerCase()}`;
+    case "vengeance": return `VENGEANCE — when it falls, the grudge grows +${r.n} until the night ends`;
+    case "rally": return `RALLY — when it wins, +${r.n} flows to the next lane`;
+    case "omen": return `OMEN — the foe's next lane fights at −${r.n}`;
   }
 }
 
@@ -174,8 +188,11 @@ function ArenaCard({ card, dim }: { card: CardDef | null; dim?: boolean }) {
         transition: "opacity 400ms",
       }}
     >
-      <div className="px-2 pt-1.5 text-[8px] opacity-80" style={{ letterSpacing: "0.18em" }}>
-        {s.label} · {card.rarity.toUpperCase()}
+      <div className="px-2 pt-1.5 flex justify-between text-[8px] opacity-80" style={{ letterSpacing: "0.14em" }}>
+        <span>
+          {s.label} · {card.rarity.toUpperCase()}
+        </span>
+        <span title="weight — light opens the night, heavy closes it">⚖{card.weight}</span>
       </div>
       <div className="px-2 pt-0.5 text-[10px] font-bold leading-tight" style={{ fontFamily: "var(--serif)" }}>
         {card.name}
@@ -197,6 +214,8 @@ export default function ArenaPage() {
   const [foeSchool, setFoeSchool] = useState("GOODSTUFF");
   const [side, setSide] = useState<"attacker" | "defender">("attacker");
   const [ground, setGround] = useState<Terrain>({ black: false, blue: true, white: false });
+  const [mySaints, setMySaints] = useState<string[]>([]);
+  const [foeSaints, setFoeSaints] = useState<string[]>([]);
   const [result, setResult] = useState<BattleResult | null>(null);
   const [revealed, setRevealed] = useState(0);
   const [tally, setTally] = useState({ won: 0, fought: 0 });
@@ -211,7 +230,11 @@ export default function ArenaPage() {
     for (let i = 0; i < 5 && pool.length; i++) {
       hand.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     }
-    return hand;
+    // Light opens the night; heavy closes it.
+    return hand
+      .map((c, order) => ({ c, order }))
+      .sort((x, y) => x.c.weight - y.c.weight || x.order - y.order)
+      .map((x) => x.c);
   };
 
   const fight = () => {
@@ -219,10 +242,14 @@ export default function ArenaPage() {
     timers.current = [];
     const mine = draw(myBinder);
     const theirs = draw(foeBinder);
+    const toMods = (ids: string[]): BattleMods => ({
+      saints: SAINTS.filter((st) => ids.includes(st.id)),
+      fossils: 10, // the back room spots everyone a healthy gallery
+    });
     const r =
       side === "attacker"
-        ? resolveBattle(mine, theirs, ground, 5)
-        : resolveBattle(theirs, mine, ground, 5);
+        ? resolveBattle(mine, theirs, ground, 5, { attacker: toMods(mySaints), defender: toMods(foeSaints) })
+        : resolveBattle(theirs, mine, ground, 5, { attacker: toMods(foeSaints), defender: toMods(mySaints) });
     setResult(r);
     setRevealed(0);
     // The nightfall reveal: one lane at a time, then the verdict.
@@ -317,8 +344,8 @@ export default function ArenaPage() {
               </button>
             ))}
             <div className="text-[8px] text-[var(--sepia-soft)] leading-snug mt-1 mb-3">
-              Home ground pays +{AFFINITY_BONUS} and lets surges fire. The triangle pays +{COUNTER_BONUS}: black breaks
-              blue, blue tickets white, white eats black.
+              Home ground pays +{AFFINITY_BONUS} and lets surges fire. There is no color triangle — a
+              mono-color binder is a school, not a suicide pact. Hands arrange light → heavy.
             </div>
             <button
               onClick={fight}
@@ -333,6 +360,49 @@ export default function ArenaPage() {
               </div>
             )}
           </div>
+        </div>
+
+
+        {/* The rearview mirrors */}
+        <div className="grid md:grid-cols-2 gap-4 mb-5">
+          {([["YOUR MIRROR", mySaints, setMySaints], ["THEIR MIRROR", foeSaints, setFoeSaints]] as const).map(
+            ([label, chosen, setChosen]) => (
+              <div key={label} className="border border-[var(--ink-faint)] p-3">
+                <div className="text-[9px] text-[var(--sepia-soft)] mb-2" style={{ letterSpacing: "0.25em" }}>
+                  {label} — DASHBOARD SAINTS ({chosen.length}/3 · forged from fossils; the back room lends freely)
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {SAINTS.map((st) => {
+                    const on = chosen.includes(st.id);
+                    return (
+                      <button
+                        key={st.id}
+                        title={`${st.flavor} (${st.fossilCost} fossils)`}
+                        onClick={() =>
+                          setChosen(
+                            on
+                              ? chosen.filter((x) => x !== st.id)
+                              : chosen.length < 3
+                                ? [...chosen, st.id]
+                                : chosen
+                          )
+                        }
+                        className={`px-2 py-1 text-[8px] border ${
+                          on
+                            ? "border-[var(--ink-strong)] font-bold bg-[var(--paper-deep)]"
+                            : "border-[var(--ink-faint)] opacity-60 hover:opacity-100"
+                        }`}
+                        style={{ letterSpacing: "0.12em", color: "var(--ink)" }}
+                      >
+                        {on ? "✚ " : ""}
+                        {st.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          )}
         </div>
 
         {/* The night */}

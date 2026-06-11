@@ -10,7 +10,9 @@
 import {
   CATALOG,
   CARD_BY_ID,
+  SAINTS,
   resolveBattle,
+  type BattleMods,
   type CardDef,
   type Suit,
   type Terrain,
@@ -78,12 +80,19 @@ function balancedBuild(): string[] {
   return out.slice(0, CAP);
 }
 
+const RIPPLES = new Set(["vengeance", "rally", "omen"]);
+
 const ARCHETYPES: Record<string, () => string[]> = {
   goodstuff: () => build((c) => c.power), // five biggest numbers, every time
   balanced: balancedBuild,
   aggro: () => build((c) => c.power + (c.rite?.kind === "reckless" ? 3 : 0), (c) => c.suit === "black"),
   wall: () => build((c) => c.power + (c.rite?.kind === "ward" || c.rite?.kind === "bulwark" ? 3 : 0), (c) => c.suit === "blue"),
   flock: () => build((c) => (c.rite ? RITE_VALUE[c.rite.kind] * 2 : 0) + c.power, (c) => c.suit === "white"),
+  // The combo school: light ripplers open the night, heavy closers collect.
+  procession: () =>
+    build((c) =>
+      c.rite && RIPPLES.has(c.rite.kind) ? 12 : c.power + (c.weight >= 6 ? 2 : 0)
+    ),
 };
 
 const TERRAINS: Record<string, Terrain> = {
@@ -101,7 +110,11 @@ function drawHand(binder: string[], rng: Rng, n: number): CardDef[] {
   for (let i = 0; i < n && pool.length; i++) {
     hand.push(CARD_BY_ID[pool.splice(Math.floor(rng() * pool.length), 1)[0]]);
   }
-  return hand;
+  // Light opens the night; heavy closes it (stable on ties — draw order).
+  return hand
+    .map((c, order) => ({ c, order }))
+    .sort((x, y) => x.c.weight - y.c.weight || x.order - y.order)
+    .map((x) => x.c);
 }
 
 function bout(a: string[], d: string[], terrain: Terrain, rng: Rng): boolean {
@@ -139,6 +152,39 @@ let mirrorWins = 0;
 for (let i = 0; i < FIGHTS; i++) {
   if (bout(binders.balanced, binders.balanced, TERRAINS.neutral, rng)) mirrorWins++;
 }
+const mirrorPct = (100 * mirrorWins) / FIGHTS;
 console.log(
-  `MIRROR (balanced vs balanced, neutral): attacker wins ${((100 * mirrorWins) / FIGHTS).toFixed(1)}% — the rest is the defender's tie edge\n`
+  `MIRROR (balanced vs balanced, neutral): attacker wins ${mirrorPct.toFixed(1)}% — the rest is the defender's tie edge\n`
 );
+
+// The rearview bench: each saint's lift for an attacking balanced binder,
+// against the saintless mirror above.
+function boutMods(a: string[], d: string[], terrain: Terrain, r: Rng, mods: BattleMods): boolean {
+  return (
+    resolveBattle(drawHand(a, r, BATTLE), drawHand(d, r, BATTLE), terrain, BATTLE, {
+      attacker: mods,
+    }).winner === "attacker"
+  );
+}
+// Baseline: balanced attacking goodstuff, saintless.
+const r0 = makeRng(SEED + 777);
+let baseWins = 0;
+for (let i = 0; i < FIGHTS; i++) {
+  if (bout(binders.balanced, binders.goodstuff, TERRAINS.neutral, r0)) baseWins++;
+}
+const basePct = (100 * baseWins) / FIGHTS;
+console.log(
+  `THE REARVIEW BENCH — balanced attacks goodstuff (neutral; saintless baseline ${basePct.toFixed(1)}%; karma rides with 9 fossils)`
+);
+for (const saint of SAINTS) {
+  const r2 = makeRng(SEED + 777);
+  let wins = 0;
+  for (let i = 0; i < FIGHTS; i++) {
+    if (boutMods(binders.balanced, binders.goodstuff, TERRAINS.neutral, r2, { saints: [saint], fossils: 9 })) wins++;
+  }
+  const pct = (100 * wins) / FIGHTS;
+  console.log(
+    `  ${saint.name.padEnd(30)} ${pct.toFixed(1).padStart(5)}%   (${(pct - basePct >= 0 ? "+" : "")}${(pct - basePct).toFixed(1)} vs saintless)`
+  );
+}
+console.log("");

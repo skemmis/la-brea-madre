@@ -26,7 +26,7 @@ import {
 import { loadLaWorld, syntheticWorld, sampleEvents, sampleQuakes, makeRng, type SimWorld } from "./world";
 import { PERSONAS, type Bot, type BotCtx } from "./bots";
 import { makeAlliances, runAllianceDay, allianceReport, type Alliance } from "./alliances";
-import { manageBinder, type CurationStyle } from "./decks";
+import { manageBinder, manageSaints, type CurationStyle } from "./decks";
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -152,6 +152,7 @@ interface BotTally {
   deedsLostToRaids: number;
   scrapsDefenses: number; // defended with fewer than battleSize cards
   packsRipped: number;
+  saintsForged: number;
 }
 
 function gini(values: number[]): number {
@@ -205,6 +206,7 @@ async function main() {
       deedsLostToRaids: 0,
       scrapsDefenses: 0,
       packsRipped: 0,
+      saintsForged: 0,
     };
 
   const daily: BotStats[][] = [];
@@ -227,6 +229,7 @@ async function main() {
         const before = Math.floor((p.scrip ?? 0) / config.packs.cost);
         manageBinder(state, config, ids[i], CURATION[personaName(i)] ?? "random", rng);
         tallies[ids[i]].packsRipped += before;
+        tallies[ids[i]].saintsForged += manageSaints(state, config, ids[i], CURATION[personaName(i)] ?? "random");
       }
     }
 
@@ -398,7 +401,7 @@ async function main() {
     console.log("\nRAID THEATER");
     console.log(
       `raids fought: ${totalRaids}   attacker win rate: ${totalRaids ? ((100 * sum((t) => t.raidsWon)) / totalRaids).toFixed(1) : "0"}%   ` +
-        `deeds taken by force: ${sum((t) => t.deedsLostToRaids)}   scrap-hand defenses: ${sum((t) => t.scrapsDefenses)}   packs ripped: ${sum((t) => t.packsRipped)}`
+        `deeds taken by force: ${sum((t) => t.deedsLostToRaids)}   scrap-hand defenses: ${sum((t) => t.scrapsDefenses)}   packs ripped: ${sum((t) => t.packsRipped)}   saints forged: ${sum((t) => t.saintsForged)}`
     );
     console.log("persona      raidsW/L   defHeld  deedsLost  scraps");
     for (const [persona] of POPULATION_MIX) {

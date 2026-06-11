@@ -37,7 +37,7 @@ export const SAINTS: SaintDef[] = [
     id: "s_dice",
     name: "THE FUZZY DICE",
     effect: { kind: "tiebreaker" },
-    fossilCost: 5,
+    fossilCost: 6,
     flavor: "House rules say ties defend. The dice have never read the house rules.",
   },
   {
@@ -50,7 +50,7 @@ export const SAINTS: SaintDef[] = [
   {
     id: "s_karma",
     name: "THE PARKING KARMA LEDGER",
-    effect: { kind: "karma", per: 3, max: 3 },
+    effect: { kind: "karma", per: 5, max: 1 },
     fossilCost: 3,
     flavor: "Every loss is an entry. Every entry accrues interest.",
   },

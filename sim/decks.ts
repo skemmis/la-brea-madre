@@ -11,6 +11,7 @@
 import {
   buyPackMut,
   cutCardMut,
+  forgeSaintMut,
   CARD_BY_ID,
   type CardDef,
   type GameConfig,
@@ -24,6 +25,7 @@ export type CurationStyle = "power" | "balanced" | "swarm" | "random";
 const RITE_VALUE: Record<string, number> = {
   surge: 2, reckless: 2, sink: 1.5, ward: 2.5, bulwark: 2,
   flock: 2, phoenix: 2.5, medic: 2, poach: 3, predator: 2,
+  vengeance: 2.5, rally: 2.5, omen: 2.5,
 };
 const riteValue = (c: CardDef): number => (c.rite ? RITE_VALUE[c.rite.kind] ?? 0 : 0);
 
@@ -70,4 +72,33 @@ export function manageBinder(
     }
     buyPackMut(state, config, me);
   }
+}
+
+/** Which relics each taste reaches for first at the forge. */
+const SAINT_TASTE: Record<CurationStyle, string[]> = {
+  power: ["s_fernando", "s_dice", "s_madre"],
+  balanced: ["s_karma", "s_dice", "s_meters"],
+  swarm: ["s_thermals", "s_ghost", "s_karma"],
+  random: ["s_lostcause", "s_jumper", "s_dice"],
+};
+
+/** Forge saints whenever the gallery can pay. Returns how many were forged. */
+export function manageSaints(
+  state: GameState,
+  config: GameConfig,
+  me: PlayerId,
+  style: CurationStyle
+): number {
+  const player = state.players[me];
+  if (!player) return 0;
+  let forged = 0;
+  for (const id of SAINT_TASTE[style]) {
+    try {
+      forgeSaintMut(state, config, me, id);
+      forged++;
+    } catch {
+      // can't afford it, already owned, or the mirror is full — all fine
+    }
+  }
+  return forged;
 }

@@ -264,7 +264,7 @@ test("the ripple flows: vengeance from the fallen, rallies from the winners, ome
     NOWHERE,
     2
   );
-  assert.equal(v.lanes[1].attackerPower, 5 + 3, "the jolt arrives angry");
+  assert.equal(v.lanes[1].attackerPower, 5 + 4, "the jolt arrives angry");
   assert.equal(v.lanes[1].winner, "attacker", "vengeance breaks the mirror match");
 
   // THE UPDRAFT (2, rally 3) beats the METER (1); the next lane lifts.
@@ -334,9 +334,9 @@ test("dashboard saints bend the rules: dice, the closer, karma, suit boosts", ()
   const closer2 = resolveBattle([card("u12")], [card("b11")], NOWHERE, 1, { attacker: fernando });
   assert.equal(closer2.lanes[0].attackerPower, 18, "St. Fernando doubles the closer");
 
-  const karma = { saints: [SAINT_BY_ID.s_karma], fossils: 7 };
+  const karma = { saints: [SAINT_BY_ID.s_karma], fossils: 9 };
   const k = resolveBattle([card("u01")], [card("u04")], NOWHERE, 1, { attacker: karma });
-  assert.equal(k.lanes[0].attackerPower, 1 + 2, "+1 per 3 fossils, twice over");
+  assert.equal(k.lanes[0].attackerPower, 1 + 1, "+1 at five fossils, and that is the cap");
 
   const madre = { saints: [SAINT_BY_ID.s_madre], fossils: 0 };
   const m = resolveBattle([card("b04")], [card("u04")], NOWHERE, 1, { attacker: madre });
