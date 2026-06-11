@@ -374,3 +374,17 @@ test("jumper cables bring winning reckless cards home; the patron refunds lost s
   const tax = l.lastReport!.perPlayer["1"].taxPaid;
   assert.equal(l.players["1"].crude, before - tax, "the stake came home anyway");
 });
+
+test("the raid era retires self-assessment: county valuation rules all", () => {
+  const cfg = raidConfig();
+  let s = armed(cfg, ["u01"], ["u01"]);
+  assert.throws(
+    () => applyAction(s, cfg, "2", { type: "assess", h3: CENTER, price: 99999 }),
+    /suggestion box/
+  );
+  // Tax accrues on the county's number even if an old price lingers on the deed.
+  s.hexes[CENTER].price = 1_000_000; // a fossil from the buyout era
+  s = tick(s, cfg, []);
+  assert.equal(s.lastReport!.perPlayer["2"].taxPaid, Math.round(100 * cfg.assessment.taxRate),
+    "the ledger, not the owner, sets the tax");
+});

@@ -128,8 +128,11 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
   const mine = ownedHexes(state, playerId);
 
   // Re-pricing your own land is free — the tax is the cost of bravado.
-  for (const h of mine) {
-    actions.push({ type: "assess", h3: h, price: assessedPrice(state, config, h) });
+  // (Buyout era only: under raids, the county sets every valuation itself.)
+  if (!config.raids.enabled) {
+    for (const h of mine) {
+      actions.push({ type: "assess", h3: h, price: assessedPrice(state, config, h) });
+    }
   }
 
   // Everything below spends a Work Order.
@@ -189,11 +192,12 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
 
   if (config.raids.enabled) {
     // Raid: challenge any other player's deed to tonight's deck-fight.
+    // Everything prices off the county valuation — the ledger, not the owner.
     for (const [h3, hx] of Object.entries(state.hexes)) {
       if (
         hx.ownerId &&
         hx.ownerId !== playerId &&
-        player.crude >= Math.round(assessedPrice(state, config, h3) * config.raids.compFraction)
+        player.crude >= Math.round(claimPrice(config, h3) * config.raids.compFraction)
       ) {
         actions.push({ type: "raid", h3 });
       }
@@ -233,6 +237,7 @@ export function assertLegal(
 
   if (action.type === "assess") {
     // Free: name your price. The county taxes what you name.
+    if (config.raids.enabled) deny("the county sets valuations now — the ledger is not a suggestion box");
     if (hexState(state, action.h3).ownerId !== playerId) deny("you can only assess your own parcel");
     if (!(action.price >= config.assessment.minPrice)) {
       deny(`assessments start at $${config.assessment.minPrice}`);
@@ -301,7 +306,7 @@ export function assertLegal(
       const hx = state.hexes[action.h3];
       if (!hx?.ownerId) deny("nothing deeded there");
       if (hx.ownerId === playerId) deny("you already own that parcel");
-      const escrow = Math.round(assessedPrice(state, config, action.h3) * config.raids.compFraction);
+      const escrow = Math.round(claimPrice(config, action.h3) * config.raids.compFraction);
       if (player.crude < escrow) deny("not enough money to post the raid escrow");
       return;
     }
@@ -329,7 +334,8 @@ function applyLegalAction(
       player.workOrders -= 1;
       const hx = ensureHex(action.h3);
       hx.ownerId = playerId;
-      hx.price = claimPrice(config, action.h3); // honest by default
+      // Buyout era: a default honest asking price. Raid era: the county's call.
+      if (!config.raids.enabled) hx.price = claimPrice(config, action.h3);
       break;
     }
 
@@ -385,7 +391,7 @@ function applyLegalAction(
 
     case "raid": {
       // Post escrow now; the battle happens at tonight's tick.
-      const ask = assessedPrice(state, config, action.h3);
+      const ask = claimPrice(config, action.h3); // the county valuation
       const escrow = Math.round(ask * config.raids.compFraction);
       player.crude -= escrow;
       player.workOrders -= 1;
@@ -520,7 +526,9 @@ export function tick(
   for (const [h3, hx] of Object.entries(next.hexes)) {
     if (!hx.ownerId) continue;
     if (!ownedBy.has(hx.ownerId)) ownedBy.set(hx.ownerId, []);
-    ownedBy.get(hx.ownerId)!.push({ h3, hx, price: hx.price ?? claimPrice(config, h3) });
+    // Raid era: tax accrues on the county valuation — there is no dodging it.
+    const price = config.raids.enabled ? claimPrice(config, h3) : (hx.price ?? claimPrice(config, h3));
+    ownedBy.get(hx.ownerId)!.push({ h3, hx, price });
   }
   for (const [id, player] of Object.entries(next.players)) {
     const owned = ownedBy.get(id);

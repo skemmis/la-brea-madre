@@ -78,9 +78,12 @@ function bestUnowned(ctx: BotCtx, ranked: string[]): string | null {
 
 const fineOf = (ctx: BotCtx, h: string) => ctx.world.fineRate.get(h) ?? 0;
 
-/** What taking a parcel costs up front: the full ask, or the raid escrow. */
-function takingCost(ctx: BotCtx, ask: number): number {
-  return ctx.config.raids.enabled ? Math.round(ask * ctx.config.raids.compFraction) : ask;
+/** What taking a parcel costs up front: the full ask, or the raid escrow
+ * (which prices off the county valuation, not the owner's opinion). */
+function takingCost(ctx: BotCtx, h3: string): number {
+  return ctx.config.raids.enabled
+    ? Math.round(claimPrice(ctx.config, h3) * ctx.config.raids.compFraction)
+    : assessedPrice(ctx.state, ctx.config, h3);
 }
 
 /** The action that takes someone's parcel under the current rules. */
@@ -97,7 +100,7 @@ function bestBargain(ctx: BotCtx, discount = 0.7): string | null {
     const fair = claimPrice(ctx.config, h3) * (1 + (ctx.config.yield.upgradeBonus[hx.upgradeLevel] ?? 0));
     if (fair <= ctx.config.assessment.minPrice) continue;
     const ask = assessedPrice(ctx.state, ctx.config, h3);
-    if (takingCost(ctx, ask) > cash(ctx.state, ctx.me)) continue;
+    if (takingCost(ctx, h3) > cash(ctx.state, ctx.me)) continue;
     const ratio = ask / fair;
     if (ratio < bestRatio) {
       bestRatio = ratio;
@@ -142,9 +145,11 @@ export function rentier(): Bot {
         const h = bestUnowned(ctx, ctx.world.byFine);
         return h ? { type: "expand", h3: h } : null;
       }
-      // Keep prices honest (a hair above fair, free action).
-      const reprice = worstSelfPricing(ctx, owned, 1.2);
-      if (reprice) return { type: "assess", h3: reprice.h3, price: reprice.price };
+      // Keep prices honest (a hair above fair, free action — buyout era only).
+      if (!ctx.config.raids.enabled) {
+        const reprice = worstSelfPricing(ctx, owned, 1.2);
+        if (reprice) return { type: "assess", h3: reprice.h3, price: reprice.price };
+      }
       // Repair anything badly shaken first — protect the income.
       const wounded = owned.filter((h) => (ctx.state.hexes[h].degradation ?? 0) >= 20);
       const worst = best(wounded, (h) => incomeOf(ctx, h));
@@ -206,11 +211,14 @@ export function sprawler(): Bot {
         const h = bestUnowned(ctx, ctx.world.byFine);
         return h ? { type: "expand", h3: h } : null;
       }
-      // Dodge the tax: lowball every assessment (and learn why that's bad).
-      const lowball = owned.find(
-        (h) => assessedPrice(ctx.state, ctx.config, h) > ctx.config.assessment.minPrice
-      );
-      if (lowball) return { type: "assess", h3: lowball, price: ctx.config.assessment.minPrice };
+      // Dodge the tax: lowball every assessment (buyout era only — the county
+      // assessor stopped taking calls when the raids opened).
+      if (!ctx.config.raids.enabled) {
+        const lowball = owned.find(
+          (h) => assessedPrice(ctx.state, ctx.config, h) > ctx.config.assessment.minPrice
+        );
+        if (lowball) return { type: "assess", h3: lowball, price: ctx.config.assessment.minPrice };
+      }
       const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
       return claim ? { type: "expand", h3: claim } : null;
@@ -228,12 +236,27 @@ export function flipper(): Bot {
         const h = bestUnowned(ctx, ctx.world.byFine);
         return h ? { type: "expand", h3: h } : null;
       }
-      // Mark acquisitions up to a fat ask immediately.
-      const reprice = worstSelfPricing(ctx, owned, 1.5);
-      if (reprice) return { type: "assess", h3: reprice.h3, price: reprice.price };
-      // Hunt mispriced land anywhere on the map (by checkbook or by deck).
-      const bargain = bestBargain(ctx, 0.75);
-      if (bargain) return takeAction(ctx, bargain);
+      if (ctx.config.raids.enabled) {
+        // The baron: there are no mispriced deeds under county valuation, so
+        // hunt the richest one your escrow can reach — crown jewels first.
+        let jewel: string | null = null;
+        let jewelFine = 60; // not worth a Work Order below this $/day
+        for (const [h3, hx] of Object.entries(ctx.state.hexes)) {
+          if (!hx.ownerId || hx.ownerId === ctx.me) continue;
+          const fine = fineOf(ctx, h3);
+          if (fine > jewelFine && takingCost(ctx, h3) <= cash(ctx.state, ctx.me)) {
+            jewelFine = fine;
+            jewel = h3;
+          }
+        }
+        if (jewel) return { type: "raid", h3: jewel };
+      } else {
+        // Buyout era: mark acquisitions up, hunt mispriced land.
+        const reprice = worstSelfPricing(ctx, owned, 1.5);
+        if (reprice) return { type: "assess", h3: reprice.h3, price: reprice.price };
+        const bargain = bestBargain(ctx, 0.75);
+        if (bargain) return takeAction(ctx, bargain);
+      }
       // Nothing cheap on the board: grow normally.
       const f = frontier(ctx, owned).filter((h) => cash(ctx.state, ctx.me) >= claimPrice(ctx.config, h));
       const claim = best(f, (h) => fineOf(ctx, h));
@@ -263,7 +286,7 @@ export function drifter(): Bot {
         const h = owned[Math.floor(ctx.rng() * owned.length)];
         if (ctx.state.hexes[h].upgradeLevel < ctx.config.maxUpgrade) return { type: "upgrade", h3: h };
       }
-      if (roll < 0.8) {
+      if (roll < 0.8 && !ctx.config.raids.enabled) {
         const h = owned[Math.floor(ctx.rng() * owned.length)];
         const price = Math.max(ctx.config.assessment.minPrice, Math.round(ctx.rng() * 5000));
         return { type: "assess", h3: h, price };
@@ -273,7 +296,7 @@ export function drifter(): Bot {
       );
       if (enemies.length) {
         const [h3] = enemies[Math.floor(ctx.rng() * enemies.length)];
-        if (cash(ctx.state, ctx.me) >= takingCost(ctx, assessedPrice(ctx.state, ctx.config, h3))) {
+        if (cash(ctx.state, ctx.me) >= takingCost(ctx, h3)) {
           return takeAction(ctx, h3);
         }
       }
@@ -313,10 +336,8 @@ export function warlord(): Bot {
       if (!target || target.length < 5) return null; // no empire worth besieging
 
       // Hit their cheapest affordable front — quantity over quality.
-      const affordable = target.filter(
-        (h) => takingCost(ctx, assessedPrice(ctx.state, ctx.config, h)) <= cash(ctx.state, ctx.me)
-      );
-      const cheapest = best(affordable, (h) => -assessedPrice(ctx.state, ctx.config, h));
+      const affordable = target.filter((h) => takingCost(ctx, h) <= cash(ctx.state, ctx.me));
+      const cheapest = best(affordable, (h) => -claimPrice(ctx.config, h));
       return cheapest ? { type: "raid", h3: cheapest } : null;
     },
   };

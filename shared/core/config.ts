@@ -55,8 +55,8 @@ export function defaultConfig(
     },
     raids: {
       enabled: false, // prod keeps buyouts until the deck layer ships
-      compFraction: 0.5, // winning a raid still pays the loser half their ask
-      stakeFraction: 0.25, // losing one donates a quarter of the ask to the defender
+      compFraction: 0.65, // winning a raid still pays the loser most of the county valuation
+      stakeFraction: 0.3, // losing one donates a chunk of the valuation to the defender
       battleSize: 5,
       collectionCap: 50, // ten full defenses a night, then the walls are bare
       starterCards: 15,
