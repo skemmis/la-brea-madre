@@ -25,7 +25,7 @@ export type CurationStyle = "power" | "balanced" | "swarm" | "random";
 const RITE_VALUE: Record<string, number> = {
   surge: 2, reckless: 2, sink: 1.5, ward: 2.5, bulwark: 2,
   flock: 2, phoenix: 2.5, medic: 2, poach: 3, predator: 2,
-  vengeance: 2.5, rally: 2.5, omen: 2.5,
+  vengeance: 2.5, rally: 2.5, omen: 2.5, haunt: 2.5, anchor: 2.5, crescendo: 2,
 };
 const riteValue = (c: CardDef): number => (c.rite ? RITE_VALUE[c.rite.kind] ?? 0 : 0);
 

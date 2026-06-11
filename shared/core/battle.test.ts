@@ -388,3 +388,38 @@ test("the raid era retires self-assessment: county valuation rules all", () => {
   assert.equal(s.lastReport!.perPlayer["2"].taxPaid, Math.round(100 * cfg.assessment.taxRate),
     "the ledger, not the owner, sets the tax");
 });
+
+test("the new rites: haunts curse forward, anchors tow, crescendos build", () => {
+  // FAULT GOSSIP (1, haunt 3) falls; the foe's next lane fights at −3.
+  const h = resolveBattle(
+    [card("b26"), card("b04")],
+    [card("u04"), card("u04")], // sweepers, 4 and 4
+    NOWHERE,
+    2
+  );
+  assert.equal(h.lanes[1].defenderPower, 4 - 3, "the gossip haunts the sweeper");
+  assert.equal(h.lanes[1].winner, "attacker", "the chandelier takes the haunted lane");
+
+  // THE IMPOUND NOTICE tows the SEISMOGRAPH off its broken ground.
+  const a = resolveBattle([card("b03")], [card("u15")], { ...NOWHERE, black: true }, 1);
+  assert.equal(a.lanes[0].attackerPower, 3, "no affinity, no surge — towed");
+
+  // THE SETTLING builds by lane: +0 in lane 1, +2 in lane 3.
+  const c = resolveBattle(
+    [card("u27"), card("u27"), card("b18")],
+    [card("u04"), card("u04"), card("u04")],
+    NOWHERE,
+    3
+  );
+  assert.equal(c.lanes[2].attackerPower, 2 + 2, "the settling builds");
+
+  // Kin: a blue convoy flocks with blue, not white.
+  const k = resolveBattle(
+    [card("u21"), card("u27"), card("w15")],
+    [card("u04"), card("u04"), card("u04")],
+    NOWHERE,
+    3
+  );
+  assert.equal(k.lanes[0].attackerPower, 2 + 1, "the printer counts one blue friend");
+  assert.equal(k.lanes[2].attackerPower, 1, "the sparrow finds no white kin here");
+});

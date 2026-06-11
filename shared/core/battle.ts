@@ -71,14 +71,17 @@ function effectivePower(
   opposing: CardDef | null,
   terrain: Terrain,
   warded: boolean,
+  anchored: boolean,
   notes: string[]
 ): number {
   const card = side.cards[i];
   if (!card) return 0;
   let p = card.power;
-  if (terrain[card.suit]) {
+  if (terrain[card.suit] && !anchored) {
     p += AFFINITY_BONUS;
     notes.push(`${card.name} on home ground +${AFFINITY_BONUS}`);
+  } else if (terrain[card.suit] && anchored) {
+    notes.push(`${card.name} is towed off its home ground`);
   }
 
   // Dashboard Saints bless from the rearview mirror.
@@ -122,11 +125,20 @@ function effectivePower(
   }
   switch (rite.kind) {
     case "surge":
-      if (terrain[card.suit]) {
+      if (terrain[card.suit] && !anchored) {
         p += rite.n;
         notes.push(`${card.name} surges +${rite.n}`);
       }
       break;
+    case "crescendo": {
+      // Builds by lane, but the night only holds so much: capped at +6.
+      const built = Math.min(rite.n * i, 6);
+      if (built > 0) {
+        p += built;
+        notes.push(`${card.name} builds +${built}`);
+      }
+      break;
+    }
     case "reckless":
       p += rite.n;
       notes.push(`${card.name} is reckless +${rite.n} (it will burn)`);
@@ -138,10 +150,11 @@ function effectivePower(
       }
       break;
     case "flock": {
-      const others = side.cards.filter((f) => f && f !== card && f.suit === "white").length;
+      // Kin run together: the flock counts friends of its own color.
+      const others = side.cards.filter((f) => f && f !== card && f.suit === card.suit).length;
       if (others > 0) {
         p += rite.n * others;
-        notes.push(`${card.name} flocks +${rite.n * others}`);
+        notes.push(`${card.name} runs with its kin +${rite.n * others}`);
       }
       break;
     }
@@ -164,12 +177,15 @@ function ripple(side: SideState, foe: SideState, card: CardDef | null, warded: b
   const r = card.rite;
   if (r.kind === "vengeance" && lost) {
     side.grudge += r.n;
-    notes.push(`${card.name} falls — the grudge grows +${r.n} until avenged`);
+    notes.push(`${card.name} falls — the grudge grows +${r.n}`);
+  } else if (r.kind === "haunt" && lost) {
+    foe.curse += r.n;
+    notes.push(`${card.name} falls — it haunts the foe's next lane −${r.n}`);
   } else if (r.kind === "rally" && won) {
     side.carry = r.n;
     notes.push(`${card.name} rallies — +${r.n} flows to the next lane`);
   } else if (r.kind === "omen") {
-    foe.curse = r.n;
+    foe.curse += r.n;
     notes.push(`${card.name} reads an omen — the foe's next lane fights at −${r.n}`);
   }
 }
@@ -197,9 +213,11 @@ export function resolveBattle(
     const dc = d.cards[i] ?? null;
     const notes: string[] = [];
 
-    // Wards fire first and cannot be warded.
+    // Wards fire first and cannot be warded. Anchors hold unless warded.
     const attackerWarded = dc?.rite?.kind === "ward";
     const defenderWarded = ac?.rite?.kind === "ward";
+    const attackerAnchored = dc?.rite?.kind === "anchor" && !defenderWarded;
+    const defenderAnchored = ac?.rite?.kind === "anchor" && !attackerWarded;
 
     // The tar accepts both parties — unless the ordinance forbids it.
     const sunk =
@@ -221,8 +239,8 @@ export function resolveBattle(
       continue;
     }
 
-    const ap = effectivePower(a, i, lanes, dc, terrain, !!attackerWarded, notes);
-    const dp = effectivePower(d, i, lanes, ac, terrain, !!defenderWarded, notes);
+    const ap = effectivePower(a, i, lanes, dc, terrain, !!attackerWarded, attackerAnchored, notes);
+    const dp = effectivePower(d, i, lanes, ac, terrain, !!defenderWarded, defenderAnchored, notes);
     a.curse = 0;
     d.curse = 0;
 

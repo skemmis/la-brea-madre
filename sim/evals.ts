@@ -257,9 +257,9 @@ console.log("  the worst marriages:");
 for (const l of lifts.slice(-5)) {
   console.log(`    ${l.lift.toFixed(1).padStart(5)}  ${name(l.a)}  ✕  ${name(l.b)}   (n=${l.n})`);
 }
-const singing = lifts.filter((l) => l.lift > 5).length;
+const singing = lifts.filter((l) => l.lift > 10).length;
 console.log(`\nVERDICTS`);
 console.log(`  • rites decide deeds ${meanBattleFlip.toFixed(1)}% of the time they appear (want 8–25%: below = wallpaper, above = chaos)`);
 console.log(`  • ${withHome.length}/${CATALOG.length} cards have a home context; ${deadWeight.length} are dead weight; ${dominant.length} are always-right picks (want 0)`);
-console.log(`  • ${singing} pairs lift more than +5 points — discoverable combos (want a dozen or more)`);
+console.log(`  • ${singing} pairs lift more than +10 points — discoverable combos (want a dozen or more)`);
 console.log("");

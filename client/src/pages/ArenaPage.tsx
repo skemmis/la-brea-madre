@@ -53,7 +53,7 @@ function build(score: (c: CardDef) => number, filter?: (c: CardDef) => boolean):
 const RITE_VALUE: Record<string, number> = {
   surge: 2, reckless: 2, sink: 1.5, ward: 2.5, bulwark: 2,
   flock: 2, phoenix: 2.5, medic: 2, poach: 3, predator: 2,
-  vengeance: 2.5, rally: 2.5, omen: 2.5,
+  vengeance: 2.5, rally: 2.5, omen: 2.5, haunt: 2.5, anchor: 2.5, crescendo: 2,
 };
 
 const SCHOOLS: Record<string, { blurb: string; binder: () => CardDef[] }> = {
@@ -158,7 +158,7 @@ function riteText(c: CardDef): string {
     case "sink": return "SINK — the lane swallows both";
     case "ward": return "WARD — the opposing rite does not fire";
     case "bulwark": return `BULWARK +${r.n} when holding the deed`;
-    case "flock": return `FLOCK +${r.n} per other White card here`;
+    case "flock": return `FLOCK +${r.n} per other ${SUIT_STYLE[c.suit].label.toLowerCase()} card here`;
     case "phoenix": return "PHOENIX — never burned, wounded, or stolen";
     case "medic": return "MEDIC — if it survives, heals a wounded card";
     case "poach": return "POACH — keeps what it beats, forever";
@@ -166,6 +166,9 @@ function riteText(c: CardDef): string {
     case "vengeance": return `VENGEANCE — when it falls, the grudge grows +${r.n} until the night ends`;
     case "rally": return `RALLY — when it wins, +${r.n} flows to the next lane`;
     case "omen": return `OMEN — the foe's next lane fights at −${r.n}`;
+    case "haunt": return `HAUNT — when it falls, the foe's next lane fights at −${r.n}`;
+    case "anchor": return "ANCHOR — the impound: the opposing card loses its home ground";
+    case "crescendo": return `CRESCENDO +${r.n} per lane — it builds as the night goes`;
   }
 }
 
