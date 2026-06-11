@@ -63,6 +63,7 @@ export function defaultConfig(
       attackerFate: "burn", // you declared the war; your fallen don't come home
       defenderFate: "rest", // the besieged bleed strength, never bone
       restDays: 3,
+      saintSlots: 3,
       machineTerrainFine: 300,
       carrionTerrainRate: 0.03,
     },

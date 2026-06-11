@@ -93,6 +93,8 @@ export interface GameConfig {
     defenderFate: "burn" | "rest" | "none";
     /** How long a wounded card rests. */
     restDays: number;
+    /** Dashboard Saints a player can hang from the mirror. */
+    saintSlots: number;
     /** A hex is BLUE terrain at or above this ticket $/day. */
     machineTerrainFine: number;
     /** A hex is WHITE terrain at or above this dead-animal rate/day. */
@@ -150,9 +152,12 @@ export interface PlayerState {
   scrip?: number;
   /**
    * The fossil gallery: rares and mythics that burned. The tar preserves
-   * what it kills — out of play forever, on display forever.
+   * what it kills — out of play forever, on display forever (or until the
+   * forge takes payment in bone).
    */
   fossils?: Fossil[];
+  /** Dashboard Saints forged from fossils — at most raids.saintSlots, forever. */
+  saints?: string[];
 }
 
 export interface Fossil {

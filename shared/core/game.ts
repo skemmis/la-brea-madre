@@ -10,8 +10,9 @@
  */
 import { gridDisk } from "h3-js";
 import { makeRng, nextFloat } from "./rng";
-import { CARD_BY_ID, openPack, starterBinder } from "./cards";
+import { CARD_BY_ID, openPack, starterBinder, type CardDef } from "./cards";
 import { resolveBattle, type Terrain } from "./battle";
+import { SAINT_BY_ID, hasSaint, type BattleMods } from "./saints";
 import type {
   Action,
   BinderCard,
@@ -599,7 +600,25 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
     }
     return pool;
   };
-  const draw = (id: PlayerId): number[] => poolOf(id).splice(0, config.raids.battleSize);
+  // Draw, then arrange light-to-heavy: weight decides who opens and who
+  // closes the night. (Stable on ties, so equal weights keep draw order.)
+  const draw = (id: PlayerId): number[] => {
+    const idx = poolOf(id).splice(0, config.raids.battleSize);
+    const binder = next.players[id]?.binder ?? [];
+    return idx
+      .map((i, order) => ({ i, order, w: CARD_BY_ID[binder[i]?.def ?? ""]?.weight ?? 9 }))
+      .sort((x, y) => x.w - y.w || x.order - y.order)
+      .map((x) => x.i);
+  };
+
+  // What each side carries in from the rearview mirror.
+  const modsOf = (id: PlayerId): BattleMods => {
+    const p = next.players[id];
+    return {
+      saints: (p?.saints ?? []).map((s) => SAINT_BY_ID[s]).filter(Boolean),
+      fossils: p?.fossils?.length ?? 0,
+    };
+  };
 
   // Fates are queued all night and settled at dawn (stable binder indices).
   // Priority per beaten card: poach > sink/reckless burn > side fate.
@@ -637,7 +656,12 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
     const dIdx = draw(defenderId);
     const aHand = aIdx.map((i) => CARD_BY_ID[attacker.binder![i].def]).filter(Boolean);
     const dHand = dIdx.map((i) => CARD_BY_ID[defender?.binder?.[i]?.def ?? ""]).filter(Boolean);
-    const result = resolveBattle(aHand, dHand, terrainOf(config, next, raid.h3), config.raids.battleSize);
+    const aMods = modsOf(raid.attackerId);
+    const dMods = modsOf(defenderId);
+    const result = resolveBattle(aHand, dHand, terrainOf(config, next, raid.h3), config.raids.battleSize, {
+      attacker: aMods,
+      defender: dMods,
+    });
 
     // Fates, lane by lane (phoenixes excluded — they always walk away).
     const burned = { attacker: [] as string[], defender: [] as string[] };
@@ -677,8 +701,16 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
         }
       } else {
         // Survivors' rites: the reckless burn anyway; the medics make rounds.
-        if (recklessFired) burned[side].push(...burn(me, idx));
-        else if (card.rite?.kind === "medic" && !myWarded) {
+        const mods = side === "attacker" ? aMods : dMods;
+        const wonLane = r.winner === side;
+        if (recklessFired) {
+          // THE JUMPER CABLES: a reckless card that won its lane comes back.
+          if (wonLane && hasSaint(mods, "jumper")) {
+            // dead by its own nature; back by lunch
+          } else {
+            burned[side].push(...burn(me, idx));
+          }
+        } else if (card.rite?.kind === "medic" && !myWarded) {
           toHeal.set(me, (toHeal.get(me) ?? 0) + 1);
         }
       }
@@ -694,6 +726,10 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
       hx.ownerId = raid.attackerId;
       if (defender) defender.crude += raid.escrow;
       paid = raid.escrow;
+    } else if (hasSaint(aMods, "lostCause")) {
+      // PATRON OF LOST CAUSES: the stake comes home anyway.
+      attacker.crude += raid.escrow;
+      paid = 0;
     } else {
       // The walls held: the stake stays with the defender, the rest comes home.
       if (defender) defender.crude += raid.stake;
@@ -792,6 +828,33 @@ export function cutCardMut(state: GameState, playerId: PlayerId, index: number):
   const binder = state.players[playerId]?.binder;
   if (!binder || index < 0 || index >= binder.length) throw new Error("No such card.");
   return binder.splice(index, 1)[0];
+}
+
+/**
+ * Forge a Dashboard Saint at the fossil gallery (mutating): the tar takes
+ * payment in bone — oldest fossils first — and something else comes back.
+ * Saints are forever: no unforging, at most `saintSlots` on the mirror.
+ */
+export function forgeSaintMut(
+  state: GameState,
+  config: GameConfig,
+  playerId: PlayerId,
+  saintId: string
+): void {
+  const player = state.players[playerId];
+  if (!player) throw new Error(`No such player: ${playerId}`);
+  const saint = SAINT_BY_ID[saintId];
+  if (!saint) throw new Error(`No such saint: ${saintId}`);
+  player.saints ??= [];
+  if (player.saints.includes(saintId)) throw new Error("That saint already rides with you.");
+  if (player.saints.length >= config.raids.saintSlots) {
+    throw new Error("The mirror is full — three saints is a congregation, four is a fight.");
+  }
+  if ((player.fossils?.length ?? 0) < saint.fossilCost) {
+    throw new Error(`The forge wants ${saint.fossilCost} fossils.`);
+  }
+  player.fossils!.splice(0, saint.fossilCost);
+  player.saints.push(saintId);
 }
 
 // ─── Terminal state / scoring ──────────────────────────────────────────────────
