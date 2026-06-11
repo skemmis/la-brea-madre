@@ -231,6 +231,7 @@ export default function ArenaPage() {
   const [foeSchool, setFoeSchool] = useState("GOODSTUFF");
   const [side, setSide] = useState<"attacker" | "defender">("attacker");
   const [ground, setGround] = useState<Terrain>({ black: false, blue: true, white: false });
+  const [cracked, setCrackedG] = useState(false);
   const [mySaints, setMySaints] = useState<string[]>([]);
   const [foeSaints, setFoeSaints] = useState<string[]>([]);
   const [result, setResult] = useState<BattleResult | null>(null);
@@ -265,8 +266,8 @@ export default function ArenaPage() {
     });
     const r =
       side === "attacker"
-        ? resolveBattle(mine, theirs, ground, 5, { attacker: toMods(mySaints), defender: toMods(foeSaints) })
-        : resolveBattle(theirs, mine, ground, 5, { attacker: toMods(foeSaints), defender: toMods(mySaints) });
+        ? resolveBattle(mine, theirs, ground, 5, { attacker: toMods(mySaints), defender: toMods(foeSaints), cracked })
+        : resolveBattle(theirs, mine, ground, 5, { attacker: toMods(foeSaints), defender: toMods(mySaints), cracked });
     setResult(r);
     setRevealed(0);
     // The nightfall reveal: one lane at a time, then the verdict.
@@ -347,6 +348,16 @@ export default function ArenaPage() {
             <div className="text-[9px] text-[var(--sepia-soft)] mb-2" style={{ letterSpacing: "0.25em" }}>
               THE GROUND (a parcel can be several at once)
             </div>
+            <button
+              onClick={() => setCrackedG(!cracked)}
+              className={`block w-full text-left px-2 py-1.5 mb-1 text-[10px] border ${
+                cracked ? "border-[var(--brick)] font-bold text-[var(--brick)]" : "border-[var(--ink-faint)] opacity-60 hover:opacity-100 text-[var(--ink)]"
+              }`}
+              style={{ letterSpacing: "0.15em" }}
+              title="A recent quake: ties no longer defend the deed, and bulwarks find nothing to hold"
+            >
+              {cracked ? "⚠ " : "□ "}CRACKED — the Madre's window
+            </button>
             {groundNames.map(([key, label]) => (
               <button
                 key={key}

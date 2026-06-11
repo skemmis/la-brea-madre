@@ -69,6 +69,24 @@ export function assessedPrice(state: GameState, config: GameConfig, h3: string):
   return state.hexes[h3]?.price ?? claimPrice(config, h3);
 }
 
+/** Is the parcel CRACKED — walls down, the Madre's window open? */
+export function isCracked(state: GameState, config: GameConfig, h3: string): boolean {
+  return (state.hexes[h3]?.degradation ?? 0) >= config.quake.crackedThreshold;
+}
+
+/**
+ * What the county says the parcel is worth FOR RAID PRICING: book value
+ * marked down by the damage. (Tax stays on the full book — the county does
+ * not forgive the books.)
+ */
+export function raidValue(state: GameState, config: GameConfig, h3: string): number {
+  const deg = state.hexes[h3]?.degradation ?? 0;
+  return Math.max(
+    config.assessment.minPrice,
+    Math.round(claimPrice(config, h3) * (1 - deg / 100))
+  );
+}
+
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
 export function newGame(config: GameConfig, seed: number): GameState {
@@ -197,7 +215,7 @@ export function legalActions(state: GameState, config: GameConfig, playerId: Pla
       if (
         hx.ownerId &&
         hx.ownerId !== playerId &&
-        player.crude >= Math.round(claimPrice(config, h3) * config.raids.compFraction)
+        player.crude >= Math.round(raidValue(state, config, h3) * config.raids.compFraction)
       ) {
         actions.push({ type: "raid", h3 });
       }
@@ -306,7 +324,7 @@ export function assertLegal(
       const hx = state.hexes[action.h3];
       if (!hx?.ownerId) deny("nothing deeded there");
       if (hx.ownerId === playerId) deny("you already own that parcel");
-      const escrow = Math.round(claimPrice(config, action.h3) * config.raids.compFraction);
+      const escrow = Math.round(raidValue(state, config, action.h3) * config.raids.compFraction);
       if (player.crude < escrow) deny("not enough money to post the raid escrow");
       return;
     }
@@ -390,8 +408,9 @@ function applyLegalAction(
     }
 
     case "raid": {
-      // Post escrow now; the battle happens at tonight's tick.
-      const ask = claimPrice(config, action.h3); // the county valuation
+      // Post escrow now; the battle happens at tonight's tick. The county
+      // marks damaged land down — a cracked jewel is a discount jewel.
+      const ask = raidValue(state, config, action.h3);
       const escrow = Math.round(ask * config.raids.compFraction);
       player.crude -= escrow;
       player.workOrders -= 1;
@@ -461,6 +480,11 @@ export function tick(
   const report: TickReport = { tick: next.tick, perPlayer: {}, foreclosures: [] };
   for (const id of Object.keys(next.players)) {
     report.perPlayer[id] = { gained: 0, ordersEarned: 0, taxPaid: 0, entries: [] };
+  }
+
+  // The city patches itself: degradation fades a little every dawn.
+  for (const hx of Object.values(next.hexes)) {
+    if (hx.degradation > 0) hx.degradation = Math.floor(hx.degradation * config.quake.healFactor);
   }
 
   for (const [h3, hx] of Object.entries(next.hexes)) {
@@ -666,9 +690,11 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
     const dHand = dIdx.map((i) => CARD_BY_ID[defender?.binder?.[i]?.def ?? ""]).filter(Boolean);
     const aMods = modsOf(raid.attackerId);
     const dMods = modsOf(defenderId);
+    const cracked = isCracked(next, config, raid.h3);
     const result = resolveBattle(aHand, dHand, terrainOf(config, next, raid.h3), config.raids.battleSize, {
       attacker: aMods,
       defender: dMods,
+      cracked,
     });
 
     // Fates, lane by lane (phoenixes excluded — they always walk away).
@@ -755,6 +781,7 @@ function resolveNightRaids(next: GameState, config: GameConfig, report: TickRepo
       attackerCards: aHand.length,
       defenderCards: dHand.length,
       paid,
+      cracked,
       burned,
       wounded: woundedReport,
       poached,

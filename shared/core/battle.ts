@@ -59,6 +59,7 @@ interface SideState {
   cards: CardDef[];
   mods: BattleMods;
   defending: boolean;
+  cracked: boolean; // the parcel's walls are down — bulwarks don't fire
   carry: number; // a rally rolling into my next lane (one lane only)
   grudge: number; // vengeance: stacks as my martyrs fall — the night remembers
   curse: number; // the foe's omen weighing on my next lane
@@ -144,9 +145,11 @@ function effectivePower(
       notes.push(`${card.name} is reckless +${rite.n} (it will burn)`);
       break;
     case "bulwark":
-      if (side.defending) {
+      if (side.defending && !side.cracked) {
         p += rite.n;
         notes.push(`${card.name} holds the deed +${rite.n}`);
+      } else if (side.defending && side.cracked) {
+        notes.push(`${card.name} finds nothing to hold — the walls are cracked`);
       }
       break;
     case "flock": {
@@ -199,10 +202,11 @@ export function resolveBattle(
   defender: CardDef[],
   terrain: Terrain,
   lanes: number,
-  mods: { attacker?: BattleMods; defender?: BattleMods } = {}
+  mods: { attacker?: BattleMods; defender?: BattleMods; cracked?: boolean } = {}
 ): BattleResult {
-  const a: SideState = { cards: attacker, mods: mods.attacker ?? { saints: [], fossils: 0 }, defending: false, carry: 0, grudge: 0, curse: 0 };
-  const d: SideState = { cards: defender, mods: mods.defender ?? { saints: [], fossils: 0 }, defending: true, carry: 0, grudge: 0, curse: 0 };
+  const cracked = !!mods.cracked;
+  const a: SideState = { cards: attacker, mods: mods.attacker ?? { saints: [], fossils: 0 }, defending: false, cracked, carry: 0, grudge: 0, curse: 0 };
+  const d: SideState = { cards: defender, mods: mods.defender ?? { saints: [], fossils: 0 }, defending: true, cracked, carry: 0, grudge: 0, curse: 0 };
   const laneResults: LaneResult[] = [];
   let aLanes = 0;
   let dLanes = 0;
@@ -276,14 +280,17 @@ export function resolveBattle(
     });
   }
 
-  // Every tie defends the deed — unless the raider rolled the dice.
-  let winner: BattleResult["winner"] = aLanes > dLanes ? "attacker" : "defender";
-  if (
-    aLanes === dLanes &&
-    hasSaint(a.mods, "tiebreaker") &&
-    !hasSaint(d.mods, "tiebreaker")
-  ) {
-    winner = "attacker";
+  // Every tie defends the deed — unless the walls are cracked (a standoff
+  // is not enough on broken masonry), and the dice override either way.
+  let winner: BattleResult["winner"];
+  if (aLanes > dLanes) winner = "attacker";
+  else if (dLanes > aLanes) winner = "defender";
+  else {
+    winner = cracked ? "attacker" : "defender";
+    const aDice = hasSaint(a.mods, "tiebreaker");
+    const dDice = hasSaint(d.mods, "tiebreaker");
+    if (aDice && !dDice) winner = "attacker";
+    else if (dDice && !aDice) winner = "defender";
   }
 
   return { lanes: laneResults, attackerLanes: aLanes, defenderLanes: dLanes, winner, beaten };

@@ -14,6 +14,8 @@ import { gridDisk } from "h3-js";
 import {
   assessedPrice,
   claimPrice,
+  isCracked,
+  raidValue,
   repairCost,
   type Action,
   type GameConfig,
@@ -82,7 +84,7 @@ const fineOf = (ctx: BotCtx, h: string) => ctx.world.fineRate.get(h) ?? 0;
  * (which prices off the county valuation, not the owner's opinion). */
 function takingCost(ctx: BotCtx, h3: string): number {
   return ctx.config.raids.enabled
-    ? Math.round(claimPrice(ctx.config, h3) * ctx.config.raids.compFraction)
+    ? Math.round(raidValue(ctx.state, ctx.config, h3) * ctx.config.raids.compFraction)
     : assessedPrice(ctx.state, ctx.config, h3);
 }
 
@@ -150,9 +152,12 @@ export function rentier(): Bot {
         const reprice = worstSelfPricing(ctx, owned, 1.2);
         if (reprice) return { type: "assess", h3: reprice.h3, price: reprice.price };
       }
-      // Repair anything badly shaken first — protect the income.
-      const wounded = owned.filter((h) => (ctx.state.hexes[h].degradation ?? 0) >= 20);
-      const worst = best(wounded, (h) => incomeOf(ctx, h));
+      // EMERGENCY SHORING first: slam the cracked window shut on anything
+      // valuable before the wolves smell it.
+      const cracked = owned.filter(
+        (h) => (ctx.state.hexes[h].degradation ?? 0) >= ctx.config.quake.crackedThreshold
+      );
+      const worst = best(cracked, (h) => incomeOf(ctx, h));
       if (worst && cash(ctx.state, ctx.me) >= repairCost(ctx.config, worst, ctx.state.hexes[worst].degradation)) {
         return { type: "repair", h3: worst };
       }
@@ -240,12 +245,13 @@ export function flipper(): Bot {
         // The baron: there are no mispriced deeds under county valuation, so
         // hunt the richest one your escrow can reach — crown jewels first.
         let jewel: string | null = null;
-        let jewelFine = 60; // not worth a Work Order below this $/day
+        let jewelScore = 60; // not worth a Work Order below this $/day
         for (const [h3, hx] of Object.entries(ctx.state.hexes)) {
           if (!hx.ownerId || hx.ownerId === ctx.me) continue;
-          const fine = fineOf(ctx, h3);
-          if (fine > jewelFine && takingCost(ctx, h3) <= cash(ctx.state, ctx.me)) {
-            jewelFine = fine;
+          // Cracked parcels are discount jewels: walls down, valuation down.
+          const score = fineOf(ctx, h3) * (isCracked(ctx.state, ctx.config, h3) ? 2.5 : 1);
+          if (score > jewelScore && takingCost(ctx, h3) <= cash(ctx.state, ctx.me)) {
+            jewelScore = score;
             jewel = h3;
           }
         }
@@ -335,9 +341,12 @@ export function warlord(): Bot {
       }
       if (!target || target.length < 5) return null; // no empire worth besieging
 
-      // Hit their cheapest affordable front — quantity over quality.
+      // Hit their cheapest affordable front — cracked walls first, always.
       const affordable = target.filter((h) => takingCost(ctx, h) <= cash(ctx.state, ctx.me));
-      const cheapest = best(affordable, (h) => -claimPrice(ctx.config, h));
+      const cheapest = best(
+        affordable,
+        (h) => (isCracked(ctx.state, ctx.config, h) ? 100000 : 0) - claimPrice(ctx.config, h)
+      );
       return cheapest ? { type: "raid", h3: cheapest } : null;
     },
   };

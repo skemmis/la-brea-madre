@@ -17,6 +17,8 @@ import {
   resolveBattle,
   buyPackMut,
   forgeSaintMut,
+  raidValue,
+  repairCost,
   CARD_BY_ID,
   SAINT_BY_ID,
   type BoardHex,
@@ -422,4 +424,31 @@ test("the new rites: haunts curse forward, anchors tow, crescendos build", () =>
   );
   assert.equal(k.lanes[0].attackerPower, 2 + 1, "the printer counts one blue friend");
   assert.equal(k.lanes[2].attackerPower, 1, "the sparrow finds no white kin here");
+});
+
+test("the Madre's window: cracked parcels betray their defenders", () => {
+  // A tied battle on cracked ground falls to the attacker.
+  const tie = resolveBattle([card("u04")], [card("u04")], NOWHERE, 1, { cracked: true });
+  assert.equal(tie.winner, "attacker", "a standoff is not enough on broken masonry");
+  // ...unless the defender carries the dice.
+  const dice = resolveBattle([card("u04")], [card("u04")], NOWHERE, 1, {
+    cracked: true,
+    defender: { saints: [SAINT_BY_ID.s_dice], fossils: 0 },
+  });
+  assert.equal(dice.winner, "defender", "the dice override even the cracks");
+  // Bulwarks find nothing to hold.
+  const wall = resolveBattle([card("w01")], [card("u02")], NOWHERE, 1, { cracked: true });
+  assert.equal(wall.lanes[0].defenderPower, 2, "the maid's bulwark fails on cracked walls");
+});
+
+test("damage heals on its own; shoring is the expensive panic button", () => {
+  const cfg = raidConfig();
+  let s = armed(cfg, ["u01"], ["u01"]);
+  s.hexes[CENTER].degradation = 40;
+  s = tick(s, cfg, []);
+  assert.equal(s.hexes[CENTER].degradation, 37, "the city patches itself (×0.94/day)");
+  // The county marks cracked land down for raid pricing.
+  assert.equal(raidValue(s, cfg, CENTER), Math.max(100, Math.round(100 * (1 - 37 / 100))));
+  // Emergency shoring costs triple the old rate (0.9% of value per point).
+  assert.equal(repairCost(cfg, CENTER, 37), Math.round(37 * Math.max(6, 100 * 0.009)));
 });

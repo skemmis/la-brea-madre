@@ -10,14 +10,14 @@ export function quakeRadiusKm(mag: number): number {
 
 /** Peak degradation at the epicenter: M1.5 ≈ 6, M2 ≈ 14, M2.5 ≈ 24, M3 ≈ 38. */
 export function quakePeakDamage(mag: number): number {
-  return Math.min(50, Math.round(6 * Math.pow(mag - 0.5, 2)));
+  return Math.min(80, Math.round(9 * Math.pow(mag - 0.5, 2)));
 }
 
 /** Gaussian falloff: full at the epicenter, ~1% at the felt radius. */
 export function quakeIntensityAt(distKm: number, mag: number): number {
   const r = quakeRadiusKm(mag);
   if (distKm > r) return 0;
-  const sigma = r / 2; // broad: the whole footprint takes real damage
+  const sigma = r / 1.5; // broad: most of the footprint takes real damage
   return Math.exp(-(distKm * distKm) / (2 * sigma * sigma));
 }
 

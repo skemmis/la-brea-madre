@@ -120,6 +120,34 @@ export interface SimQuake {
   lng: number;
 }
 
+/**
+ * A full year's quake schedule with OMORI AFTERSHOCK SEQUENCES: each
+ * mainshock M2.5+ spawns a decaying tail of aftershocks over the following
+ * days, a step below the parent and clustered near its epicenter. One bad
+ * night becomes a bad week — the Madre's window stays open.
+ */
+export function makeQuakeYear(rng: Rng, days: number): SimQuake[][] {
+  const byDay: SimQuake[][] = Array.from({ length: days }, () => []);
+  for (let d = 0; d < days; d++) {
+    for (const q of sampleQuakes(rng)) {
+      byDay[d].push(q);
+      if (q.mag < 2.5) continue;
+      const span = Math.round((q.mag - 1) * 4); // days the sequence runs
+      for (let t = 1; t <= span && d + t < days; t++) {
+        const k = poisson(rng, (q.mag - 1.5) / (t + 1)); // Omori decay
+        for (let j = 0; j < k; j++) {
+          byDay[d + t].push({
+            mag: Math.max(1, q.mag - 0.8 - rng() * 1.2),
+            lat: q.lat + (rng() - 0.5) * 0.03,
+            lng: q.lng + (rng() - 0.5) * 0.03,
+          });
+        }
+      }
+    }
+  }
+  return byDay;
+}
+
 /** ~233 M1.0+ a year near the basin, magnitudes exponentially rarer with size. */
 export function sampleQuakes(rng: Rng): SimQuake[] {
   const out: SimQuake[] = [];

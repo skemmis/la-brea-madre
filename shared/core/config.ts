@@ -38,9 +38,14 @@ export function defaultConfig(
       minPrice: 100,
     },
     quake: {
-      // The Madre taxes value: full repair of a wreck ≈ 30% of fair value.
-      repairFraction: 0.003,
-      repairFloorPerPoint: 2,
+      // EMERGENCY SHORING: damage heals on its own (halves weekly); paying to
+      // slam the cracked window shut TODAY costs a real premium.
+      repairFraction: 0.009,
+      repairFloorPerPoint: 6,
+      /** Daily multiplier on degradation — the city patches itself. */
+      healFactor: 0.94,
+      /** At or above this degradation a parcel is CRACKED (see raids). */
+      crackedThreshold: 12,
     },
     works: {
       retrofitCostFraction: 0.05, // bolt down a prime parcel for 5% of its worth

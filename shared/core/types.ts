@@ -51,10 +51,16 @@ export interface GameConfig {
     minPrice: number;
   };
   quake: {
-    /** Repair cost per degradation point: this fraction of the parcel's fair value. */
+    /** Emergency shoring cost per degradation point: fraction of fair value. */
     repairFraction: number;
     /** ...but never below this floor per point. */
     repairFloorPerPoint: number;
+    /** Degradation multiplies by this daily — damage heals on its own. */
+    healFactor: number;
+    /** At or above this degradation a parcel is CRACKED: ties no longer
+     * defend it, bulwarks don't fire, and the county marks its valuation
+     * down by the damage for raid pricing. */
+    crackedThreshold: number;
   };
   works: {
     /** Retrofit: one-time cost as a fraction of fair value. */
@@ -215,6 +221,8 @@ export interface RaidReport {
   defenderCards: number;
   /** $ that changed hands: comp to the loser of the land, or stake to the defender. */
   paid: number;
+  /** The parcel was CRACKED tonight — the walls were down. */
+  cracked: boolean;
   /** Card ids destroyed (per side), wounded, stolen, and healed tonight. */
   burned: { attacker: string[]; defender: string[] };
   wounded: { attacker: string[]; defender: string[] };

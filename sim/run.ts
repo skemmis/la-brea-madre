@@ -23,7 +23,7 @@ import {
   type GameConfig,
   type GameState,
 } from "../shared/core";
-import { loadLaWorld, syntheticWorld, sampleEvents, sampleQuakes, makeRng, type SimWorld } from "./world";
+import { loadLaWorld, syntheticWorld, sampleEvents, sampleQuakes, makeQuakeYear, makeRng, type SimWorld } from "./world";
 import { PERSONAS, type Bot, type BotCtx } from "./bots";
 import { makeAlliances, runAllianceDay, allianceReport, type Alliance } from "./alliances";
 import { manageBinder, manageSaints, type CurationStyle } from "./decks";
@@ -209,6 +209,9 @@ async function main() {
       saintsForged: 0,
     };
 
+  const quakeYear = makeQuakeYear(rng, DAYS);
+  let crackedRaids = 0;
+  let crackedTaken = 0;
   const daily: BotStats[][] = [];
   console.log(
     `\nLA BREA MADRE TESTING GROUNDS — ${DAYS} days, seed ${SEED}, world=${WORLD}, ` +
@@ -264,7 +267,7 @@ async function main() {
 
     // ── The world happens ──
     const owned = Object.keys(state.hexes).filter((h) => state.hexes[h].ownerId);
-    const quakes = sampleQuakes(rng);
+    const quakes = quakeYear[day];
     const events = sampleEvents(world, owned, day, rng, quakes);
     for (const e of events) {
       if (e.kind === "quake") {
@@ -281,6 +284,10 @@ async function main() {
       if (tallies[f.ownerId]) tallies[f.ownerId].foreclosures++;
     }
     for (const r of state.lastReport?.raids ?? []) {
+      if (r.cracked) {
+        crackedRaids++;
+        if (r.attackerWon) crackedTaken++;
+      }
       const att = tallies[r.attackerId];
       const def = tallies[r.defenderId];
       if (att) r.attackerWon ? att.raidsWon++ : att.raidsLost++;
@@ -401,7 +408,11 @@ async function main() {
     console.log("\nRAID THEATER");
     console.log(
       `raids fought: ${totalRaids}   attacker win rate: ${totalRaids ? ((100 * sum((t) => t.raidsWon)) / totalRaids).toFixed(1) : "0"}%   ` +
-        `deeds taken by force: ${sum((t) => t.deedsLostToRaids)}   scrap-hand defenses: ${sum((t) => t.scrapsDefenses)}   packs ripped: ${sum((t) => t.packsRipped)}   saints forged: ${sum((t) => t.saintsForged)}`
+        `deeds taken by force: ${sum((t) => t.deedsLostToRaids)}   scrap-hand defenses: ${sum((t) => t.scrapsDefenses)}   packs ripped: ${sum((t) => t.packsRipped)}   saints forged: ${sum((t) => t.saintsForged)}\n` +
+        `the Madre's window: ${crackedRaids} raids on CRACKED parcels, ${crackedTaken} deeds taken there ` +
+        `(${crackedRaids ? ((100 * crackedTaken) / crackedRaids).toFixed(0) : 0}% fall vs ${(
+          (100 * sum((t) => t.deedsLostToRaids)) / Math.max(1, totalRaids)
+        ).toFixed(0)}% overall)`
     );
     console.log("persona      raidsW/L   defHeld  deedsLost  scraps");
     for (const [persona] of POPULATION_MIX) {
