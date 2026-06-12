@@ -96,6 +96,7 @@ export function newGame(config: GameConfig, seed: number): GameState {
     tick: 0,
     players: {},
     hexes: {},
+    economyVersion: 2, // born in dollars — the shell's x10 migration must skip us
     lastReport: null,
     markets: {},
     lastSettlement: null,
