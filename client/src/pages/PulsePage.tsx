@@ -489,25 +489,24 @@ export default function PulsePage() {
             <span>THE LATEST</span>
             <span className="tabular-nums">{feedOpen ? "▾" : "▸"}</span>
           </button>
-          {feedOpen && (
-            <div className="mt-1.5 max-h-[42vh] overflow-y-auto">
-              {feed.length === 0 && (
-                <div className="text-[11px] opacity-50 italic">the street is quiet…</div>
-              )}
-              {feed.map((it, i) => (
-                <div
-                  key={it.id}
-                  className="flex items-center gap-2 text-[10px] md:text-[12px] py-[2px]"
-                  style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
-                >
-                  <span className="tabular-nums opacity-60 w-9 shrink-0">{clock(it.t).slice(0, 5)}</span>
-                  <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
-                  <span className="truncate flex-1">{families[it.fam]?.label ?? "—"}</span>
-                  <span className="tabular-nums opacity-70 font-bold shrink-0">${it.fine}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Collapsed: only the most recent. Expanded: the whole dozen. */}
+          <div className={`mt-1.5 ${feedOpen ? "max-h-[42vh] overflow-y-auto" : ""}`}>
+            {feed.length === 0 && (
+              <div className="text-[11px] opacity-50 italic">the street is quiet…</div>
+            )}
+            {(feedOpen ? feed : feed.slice(0, 1)).map((it, i) => (
+              <div
+                key={it.id}
+                className="flex items-center gap-2 text-[10px] md:text-[12px] py-[2px]"
+                style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
+              >
+                <span className="tabular-nums opacity-60 w-9 shrink-0">{clock(it.t).slice(0, 5)}</span>
+                <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
+                <span className="truncate flex-1">{families[it.fam]?.label ?? "—"}</span>
+                <span className="tabular-nums opacity-70 font-bold shrink-0">${it.fine}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
