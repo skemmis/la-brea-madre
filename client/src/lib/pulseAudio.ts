@@ -73,9 +73,14 @@ export class PulseAudio {
   private reverb!: ConvolverNode;
   private bassGain!: GainNode;
   private bassFilter!: BiquadFilterNode;
+  private wet!: GainNode;
+  private lfo!: OscillatorNode;
+  private lfoGain!: GainNode;
   private analyser: AnalyserNode | null = null;
   private buf: Uint8Array | null = null;
   private voices = 0;
+  private lastDensity = 0;
+  private lastReverb = { s: 0, d: 0 };
   running = false;
 
   start() {
@@ -111,6 +116,8 @@ export class PulseAudio {
     reverb.connect(wet);
     wet.connect(master);
     this.reverb = reverb;
+    this.wet = wet;
+    this.lastReverb = { s: DIALS.reverbSeconds, d: DIALS.reverbDecay };
 
     // The drone: D1 + A1 sines under a lowpass, gain/cutoff driven by density.
     const bassFilter = ctx.createBiquadFilter();
@@ -142,9 +149,28 @@ export class PulseAudio {
     lfo.connect(lfoGain);
     lfoGain.connect(master.gain);
     lfo.start();
+    this.lfo = lfo;
+    this.lfoGain = lfoGain;
 
     master.gain.setTargetAtTime(DIALS.masterGain, t, 2); // fade in
     this.running = true;
+  }
+
+  /** Push the current DIALS into the live graph — for in-app tuning. */
+  applyDials() {
+    const ctx = this.ctx;
+    if (!ctx || !this.running) return;
+    const now = ctx.currentTime;
+    this.master.gain.setTargetAtTime(DIALS.masterGain, now, 0.15);
+    this.wet.gain.setTargetAtTime(DIALS.reverbWet, now, 0.15);
+    this.lfo.frequency.setTargetAtTime(DIALS.breathRate, now, 0.15);
+    this.lfoGain.gain.setTargetAtTime(DIALS.breathDepth, now, 0.15);
+    // Rebuilding the impulse is the one expensive change — only on demand.
+    if (this.lastReverb.s !== DIALS.reverbSeconds || this.lastReverb.d !== DIALS.reverbDecay) {
+      this.reverb.buffer = impulse(ctx, DIALS.reverbSeconds, DIALS.reverbDecay);
+      this.lastReverb = { s: DIALS.reverbSeconds, d: DIALS.reverbDecay };
+    }
+    this.setDensity(this.lastDensity); // re-apply drone gain/cutoff
   }
 
   /** Sound one ticket: its family's note, as a slow reverberant pad. */
@@ -195,6 +221,7 @@ export class PulseAudio {
   /** The drone follows the day's intensity: violations/hour → bass presence. */
   setDensity(perHour: number) {
     const ctx = this.ctx;
+    this.lastDensity = perHour;
     if (!ctx || !this.running) return;
     const d = Math.min(1, perHour / DIALS.densityFull);
     const gain = DIALS.droneGainMin + d * (DIALS.droneGainMax - DIALS.droneGainMin);

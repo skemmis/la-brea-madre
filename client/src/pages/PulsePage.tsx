@@ -17,7 +17,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { Link } from "wouter";
 import { apiRequest } from "../lib/queryClient";
 import { SHEET_STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "../lib/sheetStyle";
-import { PulseAudio } from "../lib/pulseAudio";
+import { PulseAudio, DIALS } from "../lib/pulseAudio";
 
 interface Family { key: string; label: string; color: string }
 interface PulseEvent { t: number; lat: number; lng: number; fine: number; f: number }
@@ -105,6 +105,59 @@ function HourBars({
   );
 }
 
+// ─── The mixing desk: in-app dials for the score ──────────────────────────────
+
+// Numeric knobs: [DIALS key, label, min, max, step].
+const KNOBS: [keyof typeof DIALS, string, number, number, number][] = [
+  ["masterGain", "MASTER VOLUME", 0, 1, 0.01],
+  ["notePeak", "NOTE LOUDNESS", 0, 0.5, 0.01],
+  ["noteAttack", "NOTE ATTACK (s)", 0.1, 6, 0.1],
+  ["noteRelease", "NOTE RELEASE (s)", 0.5, 12, 0.1],
+  ["voiceCap", "MAX NOTES AT ONCE", 1, 24, 1],
+  ["shimmerFineThreshold", "OCTAVE-UP ABOVE $", 0, 400, 5],
+  ["reverbWet", "REVERB WETNESS", 0, 1, 0.01],
+  ["reverbSeconds", "REVERB TAIL (s)", 1, 10, 0.5],
+  ["reverbDecay", "REVERB DECAY SHAPE", 1, 8, 0.5],
+  ["droneGainMin", "DRONE — QUIET", 0, 1, 0.01],
+  ["droneGainMax", "DRONE — BUSY", 0, 1, 0.01],
+  ["droneCutoffMin", "DRONE TONE — QUIET (Hz)", 60, 800, 10],
+  ["droneCutoffMax", "DRONE TONE — BUSY (Hz)", 60, 1200, 10],
+  ["densityFull", "TICKETS/HR = FULL", 50, 1200, 10],
+  ["droneGlide", "DRONE GLIDE (s)", 0.5, 15, 0.5],
+  ["breathRate", "BREATH RATE (Hz)", 0.01, 0.3, 0.005],
+  ["breathDepth", "BREATH DEPTH", 0, 0.2, 0.005],
+];
+
+// Note choices, D-major pentatonic across the useful register (Hz).
+const PENT: { label: string; hz: number }[] = [
+  ["D2", 73.42], ["E2", 82.41], ["F#2", 92.5], ["A2", 110], ["B2", 123.47],
+  ["D3", 146.83], ["E3", 164.81], ["F#3", 185], ["A3", 220], ["B3", 246.94],
+  ["D4", 293.66], ["E4", 329.63], ["F#4", 369.99], ["A4", 440], ["B4", 493.88],
+  ["D5", 587.33],
+].map(([label, hz]) => ({ label: label as string, hz: hz as number }));
+
+function Knob({ k, label, min, max, step, onChange }: {
+  k: keyof typeof DIALS; label: string; min: number; max: number; step: number; onChange: () => void;
+}) {
+  const v = DIALS[k] as number;
+  const show = step >= 1 ? v.toString() : v.toFixed(step < 0.02 ? 3 : 2);
+  return (
+    <label className="block mb-2.5">
+      <div className="flex justify-between text-[10px] mb-0.5" style={{ letterSpacing: "0.1em", color: "var(--ink)" }}>
+        <span className="opacity-70">{label}</span>
+        <span className="tabular-nums font-bold">{show}</span>
+      </div>
+      <input
+        type="range"
+        min={min} max={max} step={step} value={v}
+        onChange={(e) => { (DIALS as any)[k] = parseFloat(e.target.value); onChange(); }}
+        className="w-full"
+        style={{ accentColor: "var(--ink)" }}
+      />
+    </label>
+  );
+}
+
 export default function PulsePage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -122,6 +175,22 @@ export default function PulsePage() {
   const [bins, setBins] = useState<Bins | null>(null);
   const [soundOn, setSoundOn] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
+  const [showTune, setShowTune] = useState(false);
+  const [, setTuneVer] = useState(0); // bump to re-render sliders after a change
+  const [copied, setCopied] = useState(false);
+
+  // A dial moved: push it into the live audio and re-render the controls.
+  const applyTune = () => {
+    audioRef.current?.applyDials();
+    setTuneVer((v) => v + 1);
+  };
+  const exportDials = () => {
+    const text = JSON.stringify(DIALS, null, 2);
+    navigator.clipboard?.writeText(text).then(
+      () => { setCopied(true); setTimeout(() => setCopied(false), 2000); },
+      () => {}
+    );
+  };
 
   const load = async () => {
     try {
@@ -423,16 +492,77 @@ export default function PulsePage() {
         </div>
       </div>
 
-      <Link
-        href="/"
-        className="absolute top-4 right-4 plate px-4 py-2 text-[11px] hover:opacity-100 opacity-70"
-        style={{ letterSpacing: "0.2em" }}
-      >
-        ← THE FLOOR
-      </Link>
+      <div className="absolute top-4 right-4 flex gap-2">
+        <button
+          onClick={() => setShowTune((s) => !s)}
+          className="plate px-4 py-2 text-[11px] hover:opacity-100 opacity-70"
+          style={{ letterSpacing: "0.2em", color: "var(--ink)" }}
+        >
+          {showTune ? "✕ CLOSE" : "⚙ TUNE"}
+        </button>
+        <Link
+          href="/"
+          className="plate px-4 py-2 text-[11px] hover:opacity-100 opacity-70"
+          style={{ letterSpacing: "0.2em" }}
+        >
+          ← THE FLOOR
+        </Link>
+      </div>
+
+      {/* The mixing desk — live audio dials + export */}
+      {showTune && (
+        <div className="plate absolute top-20 right-4 bottom-4 w-[320px] px-4 py-3 select-none overflow-y-auto">
+          <div className="text-[11px] mb-2 opacity-60" style={{ letterSpacing: "0.25em", color: "var(--ink)" }}>
+            THE MIXING DESK
+          </div>
+          {!soundOn && (
+            <div className="text-[10px] italic opacity-60 mb-2">turn sound on to hear changes</div>
+          )}
+          {KNOBS.map(([k, label, min, max, step]) => (
+            <Knob key={k} k={k} label={label} min={min} max={max} step={step} onChange={applyTune} />
+          ))}
+
+          <div className="text-[10px] mt-3 mb-1 opacity-60" style={{ letterSpacing: "0.2em", color: "var(--ink)" }}>
+            NOTE PER VIOLATION
+          </div>
+          {families.map((f, i) => (
+            <label key={f.key} className="flex items-center justify-between mb-1.5 text-[10px]" style={{ color: "var(--ink)" }}>
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: f.color }} />
+                {f.label}
+              </span>
+              <select
+                value={DIALS.notes[i]}
+                onChange={(e) => { DIALS.notes[i] = parseFloat(e.target.value); applyTune(); }}
+                className="bg-transparent border border-[var(--ink-faint)] text-[10px] tabular-nums"
+                style={{ color: "var(--ink)" }}
+              >
+                {PENT.map((n) => (
+                  <option key={n.hz} value={n.hz}>{n.label}</option>
+                ))}
+              </select>
+            </label>
+          ))}
+
+          <button
+            onClick={exportDials}
+            className="mt-3 w-full border-2 border-[var(--ink-strong)] py-2 text-[11px] font-bold hover:bg-[var(--paper-deep)]"
+            style={{ letterSpacing: "0.2em", color: "var(--ink)" }}
+          >
+            {copied ? "COPIED — PASTE TO CLAUDE" : "⎘ COPY THESE VALUES"}
+          </button>
+          <textarea
+            readOnly
+            value={JSON.stringify(DIALS)}
+            onFocus={(e) => e.currentTarget.select()}
+            className="mt-2 w-full h-16 text-[8px] tabular-nums bg-[var(--paper-deep)] border border-[var(--ink-faint)] p-1"
+            style={{ color: "var(--ink)", fontFamily: "monospace" }}
+          />
+        </div>
+      )}
 
       {/* Trend graphs, fixed to the 24-hour day */}
-      {bins && (
+      {bins && !showTune && (
         <div className="plate absolute top-20 right-4 px-4 py-3.5 select-none w-[340px]">
           <HourBars
             label="$ / HOUR"
@@ -460,6 +590,7 @@ export default function PulsePage() {
       )}
 
       {/* The feed: the last dozen written */}
+      {!showTune && (
       <div className="plate absolute bottom-4 right-4 px-4 py-3 select-none w-[340px]">
         <div className="text-[11px] mb-2 opacity-60" style={{ letterSpacing: "0.25em" }}>
           THE LATEST
@@ -480,6 +611,7 @@ export default function PulsePage() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Legend */}
       <div className="plate absolute bottom-4 left-4 px-4 py-3 select-none">
