@@ -32,25 +32,25 @@ export const DIALS = {
     246.94, // B3 — forbidden zones: the brightest, most plaintive tone
     185.0, // F#3 — sundry
   ],
-  shimmerFineThreshold: 150, // fines above this sound an octave up
-  noteAttack: 1.6, // seconds for a note to swell in
-  noteRelease: 4.5, // seconds for a note to fade out
+  shimmerFineThreshold: 320, // fines above this sound an octave up
+  noteAttack: 2.3, // seconds for a note to swell in
+  noteRelease: 8.8, // seconds for a note to fade out
   notePeak: 0.22, // per-note loudness ceiling (before velocity)
   voiceCap: 10, // max simultaneous notes (drops extras when busy)
 
-  reverbWet: 0.6, // how much reverb (0 dry … 1 drenched)
-  reverbSeconds: 5, // length of the reverb tail
-  reverbDecay: 3, // shape of the tail (higher = faster decay)
+  reverbWet: 0.34, // how much reverb (0 dry … 1 drenched)
+  reverbSeconds: 7.5, // length of the reverb tail
+  reverbDecay: 4.5, // shape of the tail (higher = faster decay)
 
-  droneGainMin: 0.1, // bass loudness at zero violations/hour
-  droneGainMax: 0.65, // bass loudness at full intensity
-  droneCutoffMin: 120, // bass filter (Hz) when quiet — muffled
-  droneCutoffMax: 400, // bass filter (Hz) when busy — opens up
-  densityFull: 500, // violations/hour that counts as "full intensity"
-  droneGlide: 5, // seconds the drone takes to follow a density change
+  droneGainMin: 0.31, // bass loudness at zero violations/hour
+  droneGainMax: 0.68, // bass loudness at full intensity
+  droneCutoffMin: 160, // bass filter (Hz) when quiet — muffled
+  droneCutoffMax: 350, // bass filter (Hz) when busy — opens up
+  densityFull: 380, // violations/hour that counts as "full intensity"
+  droneGlide: 6, // seconds the drone takes to follow a density change
 
-  breathRate: 0.05, // Hz of the slow volume "breathing" on the whole bed
-  breathDepth: 0.05, // how deep the breath swells
+  breathRate: 0.15, // Hz of the slow volume "breathing" on the whole bed
+  breathDepth: 0.12, // how deep the breath swells
 };
 
 /** A synthetic reverb impulse: noise with an exponential decay tail. */

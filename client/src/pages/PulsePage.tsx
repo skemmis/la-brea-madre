@@ -372,13 +372,6 @@ export default function PulsePage() {
           ctx.lineWidth = 1.1;
           ctx.stroke();
         }
-
-        // A small trembling ink mark at the origin — the ticket itself.
-        const dotR = base * 0.32 * (1 + vib * 0.5);
-        ctx.beginPath();
-        ctx.arc(x, y, dotR, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${r},${g},${b},${(1 - age) * 0.7})`;
-        ctx.fill();
       }
       active = next;
     };
