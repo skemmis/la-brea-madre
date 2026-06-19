@@ -14,7 +14,6 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Link } from "wouter";
 import { apiRequest } from "../lib/queryClient";
 import { SHEET_STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "../lib/sheetStyle";
 import { PulseAudio, DIALS } from "../lib/pulseAudio";
@@ -485,13 +484,6 @@ export default function PulsePage() {
         >
           {showTune ? "✕ CLOSE" : "⚙ TUNE"}
         </button>
-        <Link
-          href="/"
-          className="plate px-4 py-2 text-[11px] hover:opacity-100 opacity-70"
-          style={{ letterSpacing: "0.2em" }}
-        >
-          ← THE FLOOR
-        </Link>
       </div>
 
       {/* The mixing desk — live audio dials + export */}
