@@ -538,9 +538,10 @@ export default function PulsePage() {
         </div>
       )}
 
-      {/* Trend graphs, fixed to the 24-hour day */}
+      {/* Trend graphs, fixed to the 24-hour day (hidden on phones — they'd
+          cover the map) */}
       {bins && !showTune && (
-        <div className="plate absolute top-20 right-4 px-4 py-3.5 select-none w-[340px]">
+        <div className="plate absolute top-20 right-4 px-4 py-3.5 select-none w-[340px] hidden md:block">
           <HourBars
             label="$ / HOUR"
             values={bins.dollars}
