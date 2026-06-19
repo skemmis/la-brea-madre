@@ -68,21 +68,21 @@ function lowerBound(events: PulseEvent[], target: number): number {
   return lo;
 }
 
-// ─── A small vintage bar chart, fixed to the 24-hour day ──────────────────────
+// ─── A vintage bar chart, fixed to the 24-hour day ───────────────────────────
 function HourBars({
   values, max, color, nowHour, label, total,
 }: { values: number[]; max: number; color: string; nowHour: number; label: string; total: string }) {
-  const W = 188;
-  const H = 46;
-  const gap = 1.5;
+  const W = 300;
+  const H = 78;
+  const gap = 2;
   const bw = (W - gap * 23) / 24;
   return (
     <div>
-      <div className="flex justify-between text-[8px] opacity-60 mb-0.5" style={{ letterSpacing: "0.18em" }}>
-        <span>{label}</span>
-        <span className="tabular-nums">{total}</span>
+      <div className="flex justify-between items-baseline mb-1">
+        <span className="text-[11px] font-bold" style={{ letterSpacing: "0.18em", color: "var(--ink)" }}>{label}</span>
+        <span className="text-[13px] font-bold tabular-nums" style={{ color }}>{total}</span>
       </div>
-      <svg width={W} height={H} style={{ display: "block" }}>
+      <svg width={W} height={H} style={{ display: "block", width: "100%" }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         {values.map((v, h) => {
           const bh = max > 0 ? (v / max) * (H - 2) : 0;
           const future = h > nowHour;
@@ -92,14 +92,14 @@ function HourBars({
               x={h * (bw + gap)}
               y={H - bh}
               width={bw}
-              height={Math.max(future ? 0 : 0.6, bh)}
+              height={Math.max(future ? 0 : 0.8, bh)}
               fill={color}
-              opacity={future ? 0.08 : h === nowHour ? 0.55 : 0.85}
+              opacity={future ? 0.1 : h === nowHour ? 0.55 : 0.85}
             />
           );
         })}
         {/* noon tick */}
-        <rect x={12 * (bw + gap) - gap / 2} y={0} width={0.5} height={H} fill={color} opacity={0.18} />
+        <rect x={12 * (bw + gap) - gap / 2} y={0} width={0.6} height={H} fill={color} opacity={0.2} />
       </svg>
     </div>
   );
@@ -342,11 +342,11 @@ export default function PulsePage() {
       />
 
       {/* Masthead cartouche */}
-      <div className="plate absolute top-4 left-4 px-4 py-3 select-none max-w-xs">
-        <div className="text-base font-bold" style={{ letterSpacing: "0.3em" }}>
+      <div className="plate absolute top-4 left-4 px-5 py-4 select-none max-w-sm">
+        <div className="text-2xl font-bold" style={{ letterSpacing: "0.28em" }}>
           THE PARKING PULSE
         </div>
-        <div className="text-[9px] mt-1 opacity-70 leading-relaxed" style={{ letterSpacing: "0.12em" }}>
+        <div className="text-[11px] mt-1.5 opacity-70 leading-relaxed" style={{ letterSpacing: "0.1em" }}>
           THE CITY TICKETS, LIVE ON LOS ANGELES TIME.
           <br />
           {day ? (
@@ -357,24 +357,24 @@ export default function PulsePage() {
             "UNROLLING THE LEDGER…"
           )}
         </div>
-        <div className="mt-2 text-2xl font-bold tabular-nums" style={{ letterSpacing: "0.1em" }}>
+        <div className="mt-3 text-5xl font-bold tabular-nums leading-none" style={{ letterSpacing: "0.06em" }}>
           {clock(readout.now)}
         </div>
-        <div className="text-[9px] opacity-70" style={{ letterSpacing: "0.15em" }}>
+        <div className="text-[12px] opacity-75 mt-1.5" style={{ letterSpacing: "0.1em" }}>
           {readout.written.toLocaleString()} TICKETS · ${Math.round(dayTotalDollars).toLocaleString()} SINCE MIDNIGHT
         </div>
         <button
           onClick={toggleSound}
-          className="mt-2 w-full border border-[var(--ink-strong)] py-1 text-[9px] hover:bg-[var(--paper-deep)]"
-          style={{ letterSpacing: "0.25em", color: "var(--ink)" }}
+          className="mt-3 w-full border border-[var(--ink-strong)] py-2 text-[12px] hover:bg-[var(--paper-deep)]"
+          style={{ letterSpacing: "0.22em", color: "var(--ink)" }}
         >
-          {soundOn ? "♪ SOUND ON — silence" : "♪ PLAY THE CITY"}
+          {soundOn ? "♪ SOUND ON — SILENCE" : "♪ PLAY THE CITY"}
         </button>
       </div>
 
       <Link
         href="/"
-        className="absolute top-4 right-4 plate px-3 py-1.5 text-[9px] hover:opacity-100 opacity-70"
+        className="absolute top-4 right-4 plate px-4 py-2 text-[11px] hover:opacity-100 opacity-70"
         style={{ letterSpacing: "0.2em" }}
       >
         ← THE FLOOR
@@ -382,7 +382,7 @@ export default function PulsePage() {
 
       {/* Trend graphs, fixed to the 24-hour day */}
       {bins && (
-        <div className="plate absolute top-16 right-4 px-3 py-2.5 select-none">
+        <div className="plate absolute top-20 right-4 px-4 py-3.5 select-none w-[340px]">
           <HourBars
             label="$ / HOUR"
             values={bins.dollars}
@@ -391,7 +391,7 @@ export default function PulsePage() {
             nowHour={bins.nowHour}
             total={`$${Math.round(dayTotalDollars).toLocaleString()}`}
           />
-          <div className="h-2" />
+          <div className="h-3" />
           <HourBars
             label="TICKETS / HOUR"
             values={bins.count}
@@ -400,42 +400,44 @@ export default function PulsePage() {
             nowHour={bins.nowHour}
             total={readout.written.toLocaleString()}
           />
-          <div className="text-[7px] opacity-40 mt-1" style={{ letterSpacing: "0.2em" }}>
-            00h ———— 12h ———— 24h
+          <div className="flex justify-between text-[9px] opacity-45 mt-1.5" style={{ letterSpacing: "0.2em" }}>
+            <span>12 AM</span>
+            <span>NOON</span>
+            <span>12 AM</span>
           </div>
         </div>
       )}
 
       {/* The feed: the last dozen written */}
-      <div className="plate absolute bottom-4 right-4 px-3 py-2.5 select-none w-56">
-        <div className="text-[8px] mb-1.5 opacity-60" style={{ letterSpacing: "0.25em" }}>
+      <div className="plate absolute bottom-4 right-4 px-4 py-3 select-none w-[340px]">
+        <div className="text-[11px] mb-2 opacity-60" style={{ letterSpacing: "0.25em" }}>
           THE LATEST
         </div>
         {feed.length === 0 && (
-          <div className="text-[9px] opacity-50 italic">the street is quiet…</div>
+          <div className="text-[12px] opacity-50 italic">the street is quiet…</div>
         )}
         {feed.map((it, i) => (
           <div
             key={it.id}
-            className="flex items-center gap-2 text-[9px] py-[1px]"
-            style={{ letterSpacing: "0.04em", opacity: 1 - i * 0.055 }}
+            className="flex items-center gap-2.5 text-[13px] py-[3px]"
+            style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
           >
-            <span className="tabular-nums opacity-60 w-9">{clock(it.t).slice(0, 5)}</span>
-            <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
+            <span className="tabular-nums opacity-60 w-11 shrink-0">{clock(it.t).slice(0, 5)}</span>
+            <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
             <span className="truncate flex-1">{families[it.fam]?.label ?? "—"}</span>
-            <span className="tabular-nums opacity-70">${it.fine}</span>
+            <span className="tabular-nums opacity-70 font-bold shrink-0">${it.fine}</span>
           </div>
         ))}
       </div>
 
       {/* Legend */}
-      <div className="plate absolute bottom-4 left-4 px-3 py-2.5 select-none">
-        <div className="text-[8px] mb-1.5 opacity-60" style={{ letterSpacing: "0.25em" }}>
+      <div className="plate absolute bottom-4 left-4 px-4 py-3 select-none">
+        <div className="text-[11px] mb-2 opacity-60" style={{ letterSpacing: "0.25em" }}>
           THE VIOLATIONS
         </div>
         {families.map((f) => (
-          <div key={f.key} className="flex items-center gap-2 text-[9px]" style={{ letterSpacing: "0.08em" }}>
-            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: f.color }} />
+          <div key={f.key} className="flex items-center gap-2.5 text-[12px] py-[1px]" style={{ letterSpacing: "0.06em" }}>
+            <span className="inline-block w-3 h-3 rounded-full" style={{ background: f.color }} />
             {f.label}
           </div>
         ))}
