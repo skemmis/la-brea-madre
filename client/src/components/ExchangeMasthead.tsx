@@ -16,6 +16,7 @@ export default function ExchangeMasthead({ active }: { active: "floor" | "portfo
     { href: "/", label: "THE FLOOR", key: "floor" },
     { href: "/portfolio", label: "PORTFOLIO", key: "portfolio" },
     { href: "/arena", label: "ARENA", key: "arena" },
+    { href: "/pulse", label: "PULSE", key: "pulse" },
     { href: "/map", label: "MAP", key: "map" },
   ];
 

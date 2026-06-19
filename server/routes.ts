@@ -85,6 +85,20 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // The Parking Pulse: the freshest dense day of citations, time-sorted, to
+  // replay on the map as today. Ambient art piece — no game effect.
+  app.get("/api/pulse/day", async (_req: Request, res: Response) => {
+    try {
+      const { getPulseDay } = await import("./pulseService");
+      const day = await getPulseDay();
+      res.set("Cache-Control", "public, max-age=600");
+      res.json(day);
+    } catch (err: any) {
+      console.error("GET /api/pulse/day error:", err?.message ?? err);
+      res.status(503).json({ error: "the pulse is quiet — could not reach the county" });
+    }
+  });
+
   // Citation hotspots for today
   app.get("/api/map/hotspots", async (req: Request, res: Response) => {
     const date = (req.query.date as string) || todayPT();
