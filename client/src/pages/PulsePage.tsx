@@ -169,7 +169,7 @@ export default function PulsePage() {
   const feedId = useRef(0);
 
   const [day, setDay] = useState<PulseDay | null>(null);
-  const [err, setErr] = useState(false);
+  const [, setErr] = useState(false);
   const [readout, setReadout] = useState({ now: 0, written: 0 });
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [bins, setBins] = useState<Bins | null>(null);
@@ -448,18 +448,10 @@ export default function PulsePage() {
       {/* Masthead cartouche */}
       <div className="plate absolute top-4 left-4 px-5 py-4 select-none max-w-sm">
         <div className="text-2xl font-bold" style={{ letterSpacing: "0.28em" }}>
-          THE PARKING PULSE
+          MUSIC FOR PARKING
         </div>
-        <div className="text-[11px] mt-1.5 opacity-60 leading-relaxed" style={{ letterSpacing: "0.1em" }}>
-          THE CITY TICKETS, LIVE ON LOS ANGELES TIME.
-          <br />
-          {day ? (
-            <>REPLAYING {day.day} · {day.count.toLocaleString()} CITATIONS</>
-          ) : err ? (
-            "THE COUNTY IS QUIET…"
-          ) : (
-            "UNROLLING THE LEDGER…"
-          )}
+        <div className="text-[11px] mt-1.5 opacity-60" style={{ letterSpacing: "0.1em" }}>
+          REAL LOS ANGELES PARKING DATA
         </div>
         {/* The headline figures: how many, how much — since midnight. */}
         <div className="mt-3 flex items-end gap-6">
@@ -638,7 +630,7 @@ export default function PulsePage() {
         >
           <div className="plate px-10 py-8 text-center select-none max-w-md">
             <div className="text-3xl font-bold" style={{ letterSpacing: "0.28em" }}>
-              THE PARKING PULSE
+              MUSIC FOR PARKING
             </div>
             <div className="text-[12px] opacity-70 mt-3 leading-relaxed" style={{ letterSpacing: "0.08em" }}>
               A day of the city's parking citations, replayed on the hour, on
