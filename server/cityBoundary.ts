@@ -68,6 +68,7 @@ const LAND_CANDIDATES = [
 ];
 
 interface LandPoly {
+  name: string;
   rings: Ring[];
   bbox: [number, number, number, number];
 }
@@ -90,11 +91,23 @@ function landPolys(): LandPoly[] | null {
         if (lat < minLat) minLat = lat;
         if (lat > maxLat) maxLat = lat;
       }
-      return { rings, bbox: [minLng, minLat, maxLng, maxLat] };
+      return { name: f.properties?.name ?? "", rings, bbox: [minLng, minLat, maxLng, maxLat] };
     });
     break;
   }
   return landCache ?? null;
+}
+
+/** Which LA Times neighborhood a point falls in, or null. */
+export function neighborhoodAt(lat: number, lng: number): string | null {
+  const polys = landPolys();
+  if (!polys) return null;
+  for (const p of polys) {
+    const [minLng, minLat, maxLng, maxLat] = p.bbox;
+    if (lng < minLng || lng > maxLng || lat < minLat || lat > maxLat) continue;
+    if (inRings(lat, lng, p.rings)) return p.name;
+  }
+  return null;
 }
 
 function inRings(lat: number, lng: number, rs: Ring[]): boolean {

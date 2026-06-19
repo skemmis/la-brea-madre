@@ -19,9 +19,15 @@ import { SHEET_STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "../lib/sheetStyle";
 import { PulseAudio, DIALS } from "../lib/pulseAudio";
 
 interface Family { key: string; label: string; color: string }
-interface PulseEvent { t: number; lat: number; lng: number; fine: number; f: number }
+interface PulseEvent {
+  t: number; lat: number; lng: number; fine: number; f: number;
+  hood?: string; loc?: string; veh?: string; viol?: string;
+}
 interface PulseDay { day: string; count: number; families: Family[]; events: PulseEvent[] }
-interface FeedItem { fine: number; fam: number; t: number; id: number }
+interface FeedItem {
+  fine: number; fam: number; t: number; id: number;
+  hood?: string; loc?: string; veh?: string; viol?: string;
+}
 interface Bins { dollars: number[]; count: number[]; maxD: number; maxC: number; nowHour: number }
 
 const BLOOM_MS = 6500; // how long each ticket's bloom lingers, like drying ink
@@ -181,6 +187,20 @@ export default function PulsePage() {
   );
   const [, setTuneVer] = useState(0); // bump to re-render sliders after a change
   const [copied, setCopied] = useState(false);
+  const [tip, setTip] = useState<{ item: FeedItem; left: number; top: number } | null>(null);
+
+  // Place a detail tooltip beside a feed row, clamped to the screen.
+  const tipFor = (item: FeedItem, el: HTMLElement): { item: FeedItem; left: number; top: number } => {
+    const r = el.getBoundingClientRect();
+    const W = 240, H = 150;
+    let left = r.right + 8;
+    if (left + W > window.innerWidth) left = r.left - W - 8;
+    if (left < 8) left = 8;
+    let top = r.top - 4;
+    if (top + H > window.innerHeight) top = window.innerHeight - H - 8;
+    if (top < 8) top = 8;
+    return { item, left, top };
+  };
 
   // A dial moved: push it into the live audio and re-render the controls.
   const applyTune = () => {
@@ -312,7 +332,10 @@ export default function PulsePage() {
       while (cursor < events.length && events[cursor].t <= now) {
         const ev = events[cursor];
         active.push({ ev, born: perf });
-        feedRef.current.unshift({ fine: ev.fine, fam: ev.f, t: ev.t, id: feedId.current++ });
+        feedRef.current.unshift({
+          fine: ev.fine, fam: ev.f, t: ev.t, id: feedId.current++,
+          hood: ev.hood, loc: ev.loc, veh: ev.veh, viol: ev.viol,
+        });
         audioRef.current?.note(ev.f, ev.fine);
         cursor++;
         spawned = true;
@@ -497,8 +520,11 @@ export default function PulsePage() {
             {(feedOpen ? feed : feed.slice(0, 1)).map((it, i) => (
               <div
                 key={it.id}
-                className="flex items-center gap-2 text-[10px] md:text-[12px] py-[2px]"
+                className="flex items-center gap-2 text-[10px] md:text-[12px] py-[2px] cursor-pointer hover:bg-[var(--paper-deep)]"
                 style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
+                onPointerEnter={(e) => { if (e.pointerType === "mouse") setTip(tipFor(it, e.currentTarget)); }}
+                onPointerLeave={(e) => { if (e.pointerType === "mouse") setTip((t) => (t?.item.id === it.id ? null : t)); }}
+                onClick={(e) => setTip((t) => (t?.item.id === it.id ? null : tipFor(it, e.currentTarget)))}
               >
                 <span className="tabular-nums opacity-60 w-9 shrink-0">{clock(it.t).slice(0, 5)}</span>
                 <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
@@ -601,6 +627,28 @@ export default function PulsePage() {
         </div>
       )}
 
+
+      {/* Detail tooltip for a feed row — hover (desktop) or tap (mobile) */}
+      {tip && (
+        <div
+          className="fixed z-30 plate px-3 py-2.5 select-none"
+          style={{ left: tip.left, top: tip.top, width: 240 }}
+        >
+          <div className="text-[12px] font-bold" style={{ color: families[tip.item.fam]?.color, letterSpacing: "0.04em" }}>
+            {tip.item.viol ?? families[tip.item.fam]?.label ?? "—"}
+          </div>
+          {tip.item.hood && (
+            <div className="text-[11px] mt-1.5" style={{ letterSpacing: "0.06em", color: "var(--ink)" }}>
+              {tip.item.hood}
+            </div>
+          )}
+          {tip.item.loc && <div className="text-[10px] opacity-70">{tip.item.loc}</div>}
+          {tip.item.veh && <div className="text-[10px] opacity-70 mt-1">{tip.item.veh}</div>}
+          <div className="text-[10px] opacity-55 mt-1 tabular-nums" style={{ letterSpacing: "0.1em" }}>
+            ${tip.item.fine} · {clock(tip.item.t)}
+          </div>
+        </div>
+      )}
 
       {/* Legend (hidden on phones — it crowds the small screen) */}
       <div className="plate absolute bottom-4 left-4 px-4 py-3 select-none hidden md:block">

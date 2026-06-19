@@ -13,6 +13,8 @@
  * want, so the musical second pass won't need to re-plumb.
  */
 import axios from "axios";
+import { neighborhoodAt } from "./cityBoundary";
+import { MAKE_LABELS } from "./exchangeBoard";
 
 const DATASET = "https://data.lacity.org/resource/4f5p-udkv.json";
 const SOCRATA_APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
@@ -76,6 +78,10 @@ export interface PulseEvent {
   lng: number;
   fine: number; // dollars
   f: number; // family index
+  hood?: string; // neighborhood (point-in-polygon)
+  loc?: string; // street where it was written
+  veh?: string; // the vehicle: color + make (+ body)
+  viol?: string; // the exact violation
 }
 
 export interface PulseDay {
@@ -112,6 +118,28 @@ function parseCoord(latRaw: unknown, lngRaw: unknown): [number, number] | null {
   // anything outside a generous LA box.
   if (lat < 33.6 || lat > 34.4 || lng < -118.8 || lng > -118.05) return null;
   return [lat, lng];
+}
+
+/** ALL CAPS county text → Title Case for display. */
+function titleCase(s: unknown): string | undefined {
+  const str = String(s ?? "").trim();
+  if (!str) return undefined;
+  return str
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m) => m.toUpperCase())
+    .replace(/\b(\d+)([a-z]{2})\b/gi, (_, n, suf) => n + suf.toLowerCase()); // 1st, 2nd…
+}
+
+/** "WHITE" + "CHEV" + "VAN" → "White Chevrolet Van" (decoding the make code). */
+function vehicle(color: unknown, make: unknown, body: unknown): string | undefined {
+  const c = titleCase(color);
+  const code = String(make ?? "").trim().toUpperCase();
+  const m = MAKE_LABELS[code] || titleCase(code);
+  const b = titleCase(body);
+  // Drop the generic body style; keep distinctive ones (Van, Truck, Motorcycle…).
+  const keepBody = b && !/Passenger Car|Standard/i.test(b) ? b : "";
+  const parts = [c, m, keepBody].filter(Boolean);
+  return parts.length ? parts.join(" ") : undefined;
 }
 
 /** HHMM string → seconds since midnight, or null if unusable. */
@@ -151,7 +179,8 @@ async function freshestDenseDay(): Promise<string> {
 /** Build the replay stream for one donor day. */
 async function buildDay(day: string): Promise<PulseDay> {
   const rows = await socrata<any[]>({
-    $select: "issue_time,loc_lat,loc_long,fine_amount,violation_description",
+    $select:
+      "issue_time,loc_lat,loc_long,fine_amount,violation_description,location,make,body_style_desc,color_desc",
     $where: `loc_lat IS NOT NULL AND issue_date = '${day}T00:00:00.000'`,
     $limit: "50000",
   });
@@ -176,6 +205,10 @@ async function buildDay(day: string): Promise<PulseDay> {
       lng: Math.round(coord[1] * 1e5) / 1e5,
       fine,
       f: classify(r.violation_description),
+      hood: neighborhoodAt(coord[0], coord[1]) || undefined,
+      loc: titleCase(r.location),
+      veh: vehicle(r.color_desc, r.make, r.body_style_desc),
+      viol: titleCase(r.violation_description),
     });
   }
   events.sort((a, b) => a.t - b.t);
