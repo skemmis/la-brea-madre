@@ -175,6 +175,7 @@ export default function PulsePage() {
   const [soundOn, setSoundOn] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
   const [showTune, setShowTune] = useState(false);
+  const [feedOpen, setFeedOpen] = useState(false); // THE LATEST starts collapsed
   const [, setTuneVer] = useState(0); // bump to re-render sliders after a change
   const [copied, setCopied] = useState(false);
 
@@ -567,32 +568,41 @@ export default function PulsePage() {
         </div>
       )}
 
-      {/* The feed: the last dozen written */}
+      {/* The feed: the last dozen written — collapsible, starts collapsed */}
       {!showTune && (
-      <div className="plate absolute bottom-4 right-4 px-4 py-3 select-none w-[340px]">
-        <div className="text-[11px] mb-2 opacity-60" style={{ letterSpacing: "0.25em" }}>
-          THE LATEST
-        </div>
-        {feed.length === 0 && (
-          <div className="text-[12px] opacity-50 italic">the street is quiet…</div>
-        )}
-        {feed.map((it, i) => (
-          <div
-            key={it.id}
-            className="flex items-center gap-2.5 text-[13px] py-[3px]"
-            style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
-          >
-            <span className="tabular-nums opacity-60 w-11 shrink-0">{clock(it.t).slice(0, 5)}</span>
-            <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
-            <span className="truncate flex-1">{families[it.fam]?.label ?? "—"}</span>
-            <span className="tabular-nums opacity-70 font-bold shrink-0">${it.fine}</span>
+      <div className="plate absolute bottom-4 right-4 px-4 py-3 select-none w-[340px] max-w-[80vw]">
+        <button
+          onClick={() => setFeedOpen((o) => !o)}
+          className="w-full flex items-center justify-between text-[11px] opacity-60 hover:opacity-90"
+          style={{ letterSpacing: "0.25em", color: "var(--ink)" }}
+        >
+          <span>THE LATEST</span>
+          <span className="tabular-nums">{feedOpen ? "▾" : "▸"}</span>
+        </button>
+        {feedOpen && (
+          <div className="mt-2">
+            {feed.length === 0 && (
+              <div className="text-[12px] opacity-50 italic">the street is quiet…</div>
+            )}
+            {feed.map((it, i) => (
+              <div
+                key={it.id}
+                className="flex items-center gap-2.5 text-[13px] py-[3px]"
+                style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
+              >
+                <span className="tabular-nums opacity-60 w-11 shrink-0">{clock(it.t).slice(0, 5)}</span>
+                <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
+                <span className="truncate flex-1">{families[it.fam]?.label ?? "—"}</span>
+                <span className="tabular-nums opacity-70 font-bold shrink-0">${it.fine}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
       )}
 
-      {/* Legend */}
-      <div className="plate absolute bottom-4 left-4 px-4 py-3 select-none">
+      {/* Legend (hidden on phones — it crowds the small screen) */}
+      <div className="plate absolute bottom-4 left-4 px-4 py-3 select-none hidden md:block">
         <div className="text-[11px] mb-2 opacity-60" style={{ letterSpacing: "0.25em" }}>
           THE VIOLATIONS
         </div>
