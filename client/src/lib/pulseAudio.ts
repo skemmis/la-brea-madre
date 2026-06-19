@@ -11,17 +11,47 @@
  * gesture (browsers block autoplay).
  */
 
-// D major pentatonic across a warm register, indexed to FAMILIES order
-// (street_clean, meter, permit, plates, overtime, forbidden, sundry).
-const NOTES = [
-  220.0, // A3  — street cleaning: the grounding heartbeat you hear most
-  293.66, // D4 — meter
-  164.81, // E3 — permit
-  369.99, // F#4 — plates
-  329.63, // E4 — overtime
-  246.94, // B3 — forbidden zones: the brightest, most plaintive tone
-  185.0, // F#3 — sundry
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// THE DIALS — everything tunable lives here, named and commented. To change
+// the sound, just tell me e.g. "DIALS.masterGain to 0.6", "reverbWet to 0.4",
+// "noteRelease to 7", "drone louder", "permit note to G3 (196)". I'll edit
+// these numbers. (Hz cheat-sheet, D-major pentatonic: D 146.83 / E 164.81 /
+// F# 185 / A 220 / B 246.94 / D4 293.66 / E4 329.63 / F#4 369.99 / A4 440.)
+// ─────────────────────────────────────────────────────────────────────────────
+export const DIALS = {
+  masterGain: 0.5, // overall volume (0–1)
+
+  // Each violation family's note, in Hz. Order = FAMILIES order:
+  // [street_clean, meter, permit, plates, overtime, forbidden, sundry].
+  notes: [
+    220.0, // A3  — street cleaning: the grounding heartbeat you hear most
+    293.66, // D4 — meter
+    164.81, // E3 — permit
+    369.99, // F#4 — plates
+    329.63, // E4 — overtime
+    246.94, // B3 — forbidden zones: the brightest, most plaintive tone
+    185.0, // F#3 — sundry
+  ],
+  shimmerFineThreshold: 150, // fines above this sound an octave up
+  noteAttack: 1.6, // seconds for a note to swell in
+  noteRelease: 4.5, // seconds for a note to fade out
+  notePeak: 0.22, // per-note loudness ceiling (before velocity)
+  voiceCap: 10, // max simultaneous notes (drops extras when busy)
+
+  reverbWet: 0.6, // how much reverb (0 dry … 1 drenched)
+  reverbSeconds: 5, // length of the reverb tail
+  reverbDecay: 3, // shape of the tail (higher = faster decay)
+
+  droneGainMin: 0.1, // bass loudness at zero violations/hour
+  droneGainMax: 0.65, // bass loudness at full intensity
+  droneCutoffMin: 120, // bass filter (Hz) when quiet — muffled
+  droneCutoffMax: 400, // bass filter (Hz) when busy — opens up
+  densityFull: 500, // violations/hour that counts as "full intensity"
+  droneGlide: 5, // seconds the drone takes to follow a density change
+
+  breathRate: 0.05, // Hz of the slow volume "breathing" on the whole bed
+  breathDepth: 0.05, // how deep the breath swells
+};
 
 /** A synthetic reverb impulse: noise with an exponential decay tail. */
 function impulse(ctx: AudioContext, seconds: number, decay: number): AudioBuffer {
@@ -43,6 +73,8 @@ export class PulseAudio {
   private reverb!: ConvolverNode;
   private bassGain!: GainNode;
   private bassFilter!: BiquadFilterNode;
+  private analyser: AnalyserNode | null = null;
+  private buf: Uint8Array | null = null;
   private voices = 0;
   running = false;
 
@@ -64,11 +96,18 @@ export class PulseAudio {
     comp.connect(ctx.destination);
     this.master = master;
 
+    // A tap on the master, so the visuals can vibrate with the sound.
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    master.connect(analyser);
+    this.analyser = analyser;
+    this.buf = new Uint8Array(analyser.fftSize);
+
     // The long reverb tail every voice and the drone share.
     const reverb = ctx.createConvolver();
-    reverb.buffer = impulse(ctx, 5, 3);
+    reverb.buffer = impulse(ctx, DIALS.reverbSeconds, DIALS.reverbDecay);
     const wet = ctx.createGain();
-    wet.gain.value = 0.6;
+    wet.gain.value = DIALS.reverbWet;
     reverb.connect(wet);
     wet.connect(master);
     this.reverb = reverb;
@@ -76,7 +115,7 @@ export class PulseAudio {
     // The drone: D1 + A1 sines under a lowpass, gain/cutoff driven by density.
     const bassFilter = ctx.createBiquadFilter();
     bassFilter.type = "lowpass";
-    bassFilter.frequency.value = 140;
+    bassFilter.frequency.value = DIALS.droneCutoffMin;
     const bassGain = ctx.createGain();
     bassGain.gain.value = 0;
     bassFilter.connect(bassGain);
@@ -97,24 +136,24 @@ export class PulseAudio {
 
     // A slow breath on the whole bed, so it never sits perfectly still.
     const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.05;
+    lfo.frequency.value = DIALS.breathRate;
     const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.05;
+    lfoGain.gain.value = DIALS.breathDepth;
     lfo.connect(lfoGain);
     lfoGain.connect(master.gain);
     lfo.start();
 
-    master.gain.setTargetAtTime(0.5, t, 2); // fade in
+    master.gain.setTargetAtTime(DIALS.masterGain, t, 2); // fade in
     this.running = true;
   }
 
   /** Sound one ticket: its family's note, as a slow reverberant pad. */
   note(family: number, fine: number) {
     const ctx = this.ctx;
-    if (!ctx || !this.running || this.voices > 10) return;
+    if (!ctx || !this.running || this.voices > DIALS.voiceCap) return;
     const now = ctx.currentTime;
-    let freq = NOTES[family] ?? 220;
-    if (fine > 150) freq *= 2; // a shimmer an octave up on the heavy ones
+    let freq = DIALS.notes[family] ?? 220;
+    if (fine > DIALS.shimmerFineThreshold) freq *= 2; // a shimmer an octave up
 
     const o1 = ctx.createOscillator();
     o1.type = "sine";
@@ -136,9 +175,9 @@ export class PulseAudio {
     g.connect(this.master); // dry
     g.connect(this.reverb); // and into the tail
 
-    const peak = Math.min(0.9, 0.35 + fine / 400) * 0.22;
-    const A = 1.6;
-    const R = 4.5;
+    const peak = Math.min(0.9, 0.35 + fine / 400) * DIALS.notePeak;
+    const A = DIALS.noteAttack;
+    const R = DIALS.noteRelease;
     g.gain.setValueAtTime(0, now);
     g.gain.linearRampToValueAtTime(peak, now + A);
     g.gain.exponentialRampToValueAtTime(0.0001, now + A + R);
@@ -157,9 +196,23 @@ export class PulseAudio {
   setDensity(perHour: number) {
     const ctx = this.ctx;
     if (!ctx || !this.running) return;
-    const d = Math.min(1, perHour / 500);
-    this.bassGain.gain.setTargetAtTime(0.1 + d * 0.55, ctx.currentTime, 5);
-    this.bassFilter.frequency.setTargetAtTime(120 + d * 280, ctx.currentTime, 5);
+    const d = Math.min(1, perHour / DIALS.densityFull);
+    const gain = DIALS.droneGainMin + d * (DIALS.droneGainMax - DIALS.droneGainMin);
+    const cutoff = DIALS.droneCutoffMin + d * (DIALS.droneCutoffMax - DIALS.droneCutoffMin);
+    this.bassGain.gain.setTargetAtTime(gain, ctx.currentTime, DIALS.droneGlide);
+    this.bassFilter.frequency.setTargetAtTime(cutoff, ctx.currentTime, DIALS.droneGlide);
+  }
+
+  /** Current output level, 0..1 (RMS of the master tap) — for the visuals. */
+  level(): number {
+    if (!this.running || !this.analyser || !this.buf) return 0;
+    this.analyser.getByteTimeDomainData(this.buf as any);
+    let sum = 0;
+    for (let i = 0; i < this.buf.length; i++) {
+      const v = (this.buf[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.min(1, Math.sqrt(sum / this.buf.length) * 3);
   }
 
   stop() {

@@ -85,6 +85,25 @@ export interface PulseDay {
   events: PulseEvent[];
 }
 
+/** Tiny seeded PRNG + string hash, so each donor day jitters deterministically. */
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashStr(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
 function parseCoord(latRaw: unknown, lngRaw: unknown): [number, number] | null {
   const lat = Number(latRaw);
   const lng = Number(lngRaw);
@@ -137,33 +156,26 @@ async function buildDay(day: string): Promise<PulseDay> {
     $limit: "50000",
   });
 
-  // Bucket by minute so we can spread same-minute tickets across their minute —
-  // the data's resolution is HHMM, so this is the most faithful sub-minute
-  // reconstruction: a gentle patter instead of a once-a-minute thunderclap.
-  const byMinute = new Map<number, PulseEvent[]>();
+  // The data's resolution is HHMM, so we scatter each ticket to a RANDOM
+  // second within its true minute rather than spreading them evenly. Even
+  // spacing sounded metronomic; random offsets give the clusters, gaps, and
+  // overlapping notes that make Music-for-Airports breathe. Seeded by the
+  // donor day so the same day always replays identically.
+  const rng = mulberry32(hashStr(day));
+  const events: PulseEvent[] = [];
   for (const r of rows) {
     const secs = timeToSeconds(r.issue_time);
     if (secs === null) continue;
     const coord = parseCoord(r.loc_lat, r.loc_long);
     if (!coord) continue;
     const fine = Math.max(0, Math.round(Number(r.fine_amount) || 0));
-    const ev: PulseEvent = {
-      t: secs,
+    const minuteStart = secs - (secs % 60);
+    events.push({
+      t: minuteStart + Math.floor(rng() * 60),
       lat: Math.round(coord[0] * 1e5) / 1e5,
       lng: Math.round(coord[1] * 1e5) / 1e5,
       fine,
       f: classify(r.violation_description),
-    };
-    const arr = byMinute.get(secs);
-    if (arr) arr.push(ev);
-    else byMinute.set(secs, [ev]);
-  }
-
-  const events: PulseEvent[] = [];
-  for (const [minuteStart, arr] of byMinute) {
-    arr.forEach((ev, i) => {
-      ev.t = minuteStart + Math.floor((i / arr.length) * 60);
-      events.push(ev);
     });
   }
   events.sort((a, b) => a.t - b.t);

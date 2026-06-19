@@ -121,6 +121,7 @@ export default function PulsePage() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [bins, setBins] = useState<Bins | null>(null);
   const [soundOn, setSoundOn] = useState(false);
+  const [showIntro, setShowIntro] = useState(true);
 
   const load = async () => {
     try {
@@ -204,6 +205,7 @@ export default function PulsePage() {
     let raf = 0;
     let cursor = -1;
     let lastNow = -1;
+    let vib = 0; // smoothed audio level driving the line tremble
 
     type Live = { ev: PulseEvent; born: number };
     let active: Live[] = [];
@@ -248,25 +250,65 @@ export default function PulsePage() {
         setFeed(feedRef.current.slice());
       }
 
+      // The sound's loudness makes every line tremble; even silent, a faint
+      // hand-drawn quiver keeps the ink alive.
+      const lvl = audioRef.current?.level() ?? 0;
+      vib += (lvl - vib) * 0.2; // smoothed
+      const t = perf / 1000;
+
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      ctx.lineJoin = "round";
       const next: Live[] = [];
       for (const live of active) {
         const age = (perf - live.born) / BLOOM_MS;
         if (age >= 1) continue;
         next.push(live);
         const { x, y } = map.project([live.ev.lng, live.ev.lat]);
-        if (x < -40 || y < -40 || x > canvas.clientWidth + 40 || y > canvas.clientHeight + 40) continue;
+        if (x < -60 || y < -60 || x > canvas.clientWidth + 60 || y > canvas.clientHeight + 60) continue;
         const [r, g, b] = rgb(live.ev.f);
-        const base = 6 + Math.min(18, live.ev.fine / 12);
-        const ease = 1 - Math.pow(1 - age, 3);
+        const base = 7 + Math.min(20, live.ev.fine / 11);
+        const seed = live.ev.t; // stable per ticket, so each ripple has its own hand
+
+        // Three concentric ripples, each launched a beat after the last and
+        // drawn as an imperfect, trembling circle — engraved, not stamped.
+        for (let ring = 0; ring < 3; ring++) {
+          const p = age * 1.35 - ring * 0.16;
+          if (p <= 0 || p >= 1) continue;
+          const ease = 1 - Math.pow(1 - p, 2.2);
+          const radius = base * (0.3 + ease * 2.3);
+          const fade = (1 - p) * (1 - ring * 0.18);
+          if (fade <= 0.02) continue;
+
+          // Wobble: two summed sines (a hand can't draw a true circle), with
+          // amplitude swelling on the music. Lobe counts differ per ring.
+          const lobesA = 5 + ring;
+          const lobesB = 8 + ring * 2;
+          const amp = radius * (0.04 + 0.018 * ring) + (1.5 + vib * 9) + radius * vib * 0.12;
+          const phase = seed * (0.7 + ring) + t * (0.6 + ring * 0.25);
+
+          ctx.beginPath();
+          const STEPS = 56;
+          for (let i = 0; i <= STEPS; i++) {
+            const a = (i / STEPS) * Math.PI * 2;
+            const w =
+              amp * Math.sin(lobesA * a + phase) +
+              amp * 0.45 * Math.sin(lobesB * a - phase * 1.3);
+            const rr = radius + w;
+            const px = x + Math.cos(a) * rr;
+            const py = y + Math.sin(a) * rr;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.strokeStyle = `rgba(${r},${g},${b},${fade * 0.6})`;
+          ctx.lineWidth = 1.1;
+          ctx.stroke();
+        }
+
+        // A small trembling ink mark at the origin — the ticket itself.
+        const dotR = base * 0.32 * (1 + vib * 0.5);
         ctx.beginPath();
-        ctx.arc(x, y, base * (0.4 + ease * 1.6), 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(${r},${g},${b},${(1 - age) * 0.5})`;
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(x, y, base * (0.5 + ease * 0.5), 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${r},${g},${b},${(1 - age) * 0.8})`;
+        ctx.arc(x, y, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r},${g},${b},${(1 - age) * 0.7})`;
         ctx.fill();
       }
       active = next;
@@ -346,7 +388,7 @@ export default function PulsePage() {
         <div className="text-2xl font-bold" style={{ letterSpacing: "0.28em" }}>
           THE PARKING PULSE
         </div>
-        <div className="text-[11px] mt-1.5 opacity-70 leading-relaxed" style={{ letterSpacing: "0.1em" }}>
+        <div className="text-[11px] mt-1.5 opacity-60 leading-relaxed" style={{ letterSpacing: "0.1em" }}>
           THE CITY TICKETS, LIVE ON LOS ANGELES TIME.
           <br />
           {day ? (
@@ -357,19 +399,28 @@ export default function PulsePage() {
             "UNROLLING THE LEDGER…"
           )}
         </div>
-        <div className="mt-3 text-5xl font-bold tabular-nums leading-none" style={{ letterSpacing: "0.06em" }}>
-          {clock(readout.now)}
+        {/* The headline figures: how many, how much — since midnight. */}
+        <div className="mt-3 flex items-end gap-6">
+          <div>
+            <div className="text-4xl font-bold tabular-nums leading-none">
+              {readout.written.toLocaleString()}
+            </div>
+            <div className="text-[10px] opacity-55 mt-1" style={{ letterSpacing: "0.22em" }}>
+              TICKETS
+            </div>
+          </div>
+          <div>
+            <div className="text-4xl font-bold tabular-nums leading-none" style={{ color: "#a6543c" }}>
+              ${Math.round(dayTotalDollars).toLocaleString()}
+            </div>
+            <div className="text-[10px] opacity-55 mt-1" style={{ letterSpacing: "0.22em" }}>
+              IN FINES
+            </div>
+          </div>
         </div>
-        <div className="text-[12px] opacity-75 mt-1.5" style={{ letterSpacing: "0.1em" }}>
-          {readout.written.toLocaleString()} TICKETS · ${Math.round(dayTotalDollars).toLocaleString()} SINCE MIDNIGHT
+        <div className="text-[11px] opacity-45 mt-2.5 tabular-nums" style={{ letterSpacing: "0.18em" }}>
+          {clock(readout.now)} · SINCE MIDNIGHT
         </div>
-        <button
-          onClick={toggleSound}
-          className="mt-3 w-full border border-[var(--ink-strong)] py-2 text-[12px] hover:bg-[var(--paper-deep)]"
-          style={{ letterSpacing: "0.22em", color: "var(--ink)" }}
-        >
-          {soundOn ? "♪ SOUND ON — SILENCE" : "♪ PLAY THE CITY"}
-        </button>
       </div>
 
       <Link
@@ -442,6 +493,55 @@ export default function PulsePage() {
           </div>
         ))}
       </div>
+
+      {/* The sound control — once the intro is dismissed, a quiet corner toggle. */}
+      {!showIntro && (
+        <button
+          onClick={toggleSound}
+          className="plate absolute bottom-4 left-1/2 -translate-x-1/2 px-5 py-2.5 text-[12px] hover:bg-[var(--paper-deep)]"
+          style={{ letterSpacing: "0.25em", color: "var(--ink)" }}
+        >
+          {soundOn ? "♪ CLICK TO MUTE" : "♪ CLICK FOR SOUND"}
+        </button>
+      )}
+
+      {/* Opening modal: the score is silent until invited in. */}
+      {showIntro && (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center"
+          style={{ background: "rgba(42,54,106,0.18)", backdropFilter: "blur(1px)" }}
+        >
+          <div className="plate px-10 py-8 text-center select-none max-w-md">
+            <div className="text-3xl font-bold" style={{ letterSpacing: "0.28em" }}>
+              THE PARKING PULSE
+            </div>
+            <div className="text-[12px] opacity-70 mt-3 leading-relaxed" style={{ letterSpacing: "0.08em" }}>
+              A day of the city's parking citations, replayed on the hour, on
+              Los Angeles time. The map keeps a generative score — each ticket
+              a note, the city's busyness the bass.
+            </div>
+            <button
+              onClick={() => {
+                audioRef.current ??= new PulseAudio();
+                audioRef.current.start();
+                setSoundOn(true);
+                setShowIntro(false);
+              }}
+              className="mt-6 w-full border-2 border-[var(--ink-strong)] py-3 text-[14px] font-bold hover:bg-[var(--paper-deep)]"
+              style={{ letterSpacing: "0.3em", color: "var(--ink)" }}
+            >
+              ♪ CLICK FOR SOUND
+            </button>
+            <button
+              onClick={() => setShowIntro(false)}
+              className="mt-2 text-[11px] opacity-50 hover:opacity-90"
+              style={{ letterSpacing: "0.2em" }}
+            >
+              enter in silence
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
