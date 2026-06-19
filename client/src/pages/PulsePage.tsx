@@ -4,8 +4,12 @@
  * The freshest dense day of real parking citations, replayed on the vintage
  * sheet at 1:1 on Los Angeles time: a ticket written at 8:50am pops up at
  * 8:50am today. Quiet at 3am, a dawn surge when the street sweepers run.
- * Blooms are colored by what the ticket was for, sized by the fine. No
- * controls, no speed — it just runs, like watching a feeder.
+ * Blooms are colored by what the ticket was for, sized by the fine.
+ *
+ * Alongside the map: a running feed of the last dozen, two hourly trend
+ * graphs ($/hour and tickets/hour across the 24-hour day), and an optional
+ * generative ambient score (see pulseAudio.ts) — started by a click, because
+ * browsers forbid autoplay.
  */
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
@@ -13,10 +17,13 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { Link } from "wouter";
 import { apiRequest } from "../lib/queryClient";
 import { SHEET_STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "../lib/sheetStyle";
+import { PulseAudio } from "../lib/pulseAudio";
 
 interface Family { key: string; label: string; color: string }
 interface PulseEvent { t: number; lat: number; lng: number; fine: number; f: number }
 interface PulseDay { day: string; count: number; families: Family[]; events: PulseEvent[] }
+interface FeedItem { fine: number; fam: number; t: number; id: number }
+interface Bins { dollars: number[]; count: number[]; maxD: number; maxC: number; nowHour: number }
 
 const BLOOM_MS = 6500; // how long each ticket's bloom lingers, like drying ink
 
@@ -31,7 +38,7 @@ function laSecondsNow(): number {
   }).formatToParts(new Date());
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
   let h = get("hour");
-  if (h === 24) h = 0; // some engines render midnight as 24
+  if (h === 24) h = 0;
   return h * 3600 + get("minute") * 60 + get("second");
 }
 
@@ -61,21 +68,78 @@ function lowerBound(events: PulseEvent[], target: number): number {
   return lo;
 }
 
+// ─── A small vintage bar chart, fixed to the 24-hour day ──────────────────────
+function HourBars({
+  values, max, color, nowHour, label, total,
+}: { values: number[]; max: number; color: string; nowHour: number; label: string; total: string }) {
+  const W = 188;
+  const H = 46;
+  const gap = 1.5;
+  const bw = (W - gap * 23) / 24;
+  return (
+    <div>
+      <div className="flex justify-between text-[8px] opacity-60 mb-0.5" style={{ letterSpacing: "0.18em" }}>
+        <span>{label}</span>
+        <span className="tabular-nums">{total}</span>
+      </div>
+      <svg width={W} height={H} style={{ display: "block" }}>
+        {values.map((v, h) => {
+          const bh = max > 0 ? (v / max) * (H - 2) : 0;
+          const future = h > nowHour;
+          return (
+            <rect
+              key={h}
+              x={h * (bw + gap)}
+              y={H - bh}
+              width={bw}
+              height={Math.max(future ? 0 : 0.6, bh)}
+              fill={color}
+              opacity={future ? 0.08 : h === nowHour ? 0.55 : 0.85}
+            />
+          );
+        })}
+        {/* noon tick */}
+        <rect x={12 * (bw + gap) - gap / 2} y={0} width={0.5} height={H} fill={color} opacity={0.18} />
+      </svg>
+    </div>
+  );
+}
+
 export default function PulsePage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const dayRef = useRef<PulseDay | null>(null);
+  const prefixRef = useRef<{ cumD: number[]; fullD: number[]; fullC: number[]; maxD: number; maxC: number } | null>(null);
+  const audioRef = useRef<PulseAudio | null>(null);
+  const feedRef = useRef<FeedItem[]>([]);
+  const feedId = useRef(0);
 
   const [day, setDay] = useState<PulseDay | null>(null);
   const [err, setErr] = useState(false);
-  // Live readouts (updated ~1/s, not every frame, to spare React).
   const [readout, setReadout] = useState({ now: 0, written: 0 });
-  const [latest, setLatest] = useState<{ fine: number; fam: number; t: number } | null>(null);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [bins, setBins] = useState<Bins | null>(null);
+  const [soundOn, setSoundOn] = useState(false);
 
   const load = async () => {
     try {
       const d = await apiRequest<PulseDay>("GET", "/api/pulse/day");
+      // Precompute prefix sums + full-day hourly maxima for fixed-scale graphs.
+      const cumD = new Array(d.events.length + 1).fill(0);
+      for (let i = 0; i < d.events.length; i++) cumD[i + 1] = cumD[i] + d.events[i].fine;
+      const fullD = new Array(24).fill(0);
+      const fullC = new Array(24).fill(0);
+      for (const e of d.events) {
+        const h = Math.min(23, Math.floor(e.t / 3600));
+        fullD[h] += e.fine;
+        fullC[h] += 1;
+      }
+      prefixRef.current = {
+        cumD, fullD, fullC,
+        maxD: Math.max(1, ...fullD),
+        maxC: Math.max(1, ...fullC),
+      };
       dayRef.current = d;
       setDay(d);
       setErr(false);
@@ -86,6 +150,7 @@ export default function PulsePage() {
 
   useEffect(() => {
     load();
+    return () => audioRef.current?.stop();
   }, []);
 
   // The base map — the same vintage sheet the game prints on.
@@ -105,8 +170,6 @@ export default function PulsePage() {
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
 
-    // A deploy or cold start can sever a GeoJSON fetch mid-flight; MapLibre
-    // won't retry on its own. Re-request failed sources a few times.
     const retries: Record<string, number> = {};
     map.on("error", (e: any) => {
       const id: string | undefined = e?.sourceId;
@@ -120,7 +183,6 @@ export default function PulsePage() {
         if (src && typeof data === "string") src.setData(data);
       }, 2000 * (n + 1));
     });
-    // The container can measure 0 on first paint; force a resize once laid out.
     map.on("load", () => map.resize());
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(containerRef.current!);
@@ -135,14 +197,13 @@ export default function PulsePage() {
   }, []);
 
   // The animator: a canvas over the map, blooming each ticket as the LA clock
-  // crosses its moment. Runs entirely off requestAnimationFrame.
+  // crosses its moment, feeding the ticker and (if on) the music.
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     let raf = 0;
-    let cursor = -1; // next event index not yet spawned (-1 = needs seek)
+    let cursor = -1;
     let lastNow = -1;
-    let lastReadout = 0;
 
     type Live = { ev: PulseEvent; born: number };
     let active: Live[] = [];
@@ -165,25 +226,28 @@ export default function PulsePage() {
       const events = data.events;
       const now = laSecondsNow();
 
-      // First run, or midnight rollover (clock jumped backwards): seek to the
-      // present without replaying the whole morning, and refresh the donor day.
       if (cursor === -1 || now < lastNow - 5) {
-        if (cursor !== -1) load(); // a new day has begun — fetch the new donor
+        if (cursor !== -1) load();
         cursor = lowerBound(events, now);
         active = [];
       }
       lastNow = now;
 
-      // Spawn everything whose moment has arrived since the last frame.
       const perf = performance.now();
+      let spawned = false;
       while (cursor < events.length && events[cursor].t <= now) {
         const ev = events[cursor];
         active.push({ ev, born: perf });
-        setLatest({ fine: ev.fine, fam: ev.f, t: ev.t });
+        feedRef.current.unshift({ fine: ev.fine, fam: ev.f, t: ev.t, id: feedId.current++ });
+        audioRef.current?.note(ev.f, ev.fine);
         cursor++;
+        spawned = true;
+      }
+      if (spawned) {
+        feedRef.current = feedRef.current.slice(0, 12);
+        setFeed(feedRef.current.slice());
       }
 
-      // Draw the living blooms.
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
       const next: Live[] = [];
       for (const live of active) {
@@ -193,29 +257,19 @@ export default function PulsePage() {
         const { x, y } = map.project([live.ev.lng, live.ev.lat]);
         if (x < -40 || y < -40 || x > canvas.clientWidth + 40 || y > canvas.clientHeight + 40) continue;
         const [r, g, b] = rgb(live.ev.f);
-        const base = 6 + Math.min(18, live.ev.fine / 12); // bigger fine, bigger mark
-        const ease = 1 - Math.pow(1 - age, 3); // fast out, slow settle
-
-        // Expanding stamp ring.
+        const base = 6 + Math.min(18, live.ev.fine / 12);
+        const ease = 1 - Math.pow(1 - age, 3);
         ctx.beginPath();
         ctx.arc(x, y, base * (0.4 + ease * 1.6), 0, Math.PI * 2);
         ctx.strokeStyle = `rgba(${r},${g},${b},${(1 - age) * 0.5})`;
         ctx.lineWidth = 1.4;
         ctx.stroke();
-
-        // The ink dot itself, blooming then fading.
         ctx.beginPath();
         ctx.arc(x, y, base * (0.5 + ease * 0.5), 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${r},${g},${b},${(1 - age) * 0.8})`;
         ctx.fill();
       }
       active = next;
-
-      // Cheap readouts ~1/s.
-      if (perf - lastReadout > 1000) {
-        lastReadout = perf;
-        setReadout({ now, written: lowerBound(events, now + 1) });
-      }
     };
     raf = requestAnimationFrame(frame);
     return () => {
@@ -224,7 +278,60 @@ export default function PulsePage() {
     };
   }, []);
 
+  // Trend graphs + readouts + the drone's density, recomputed every few seconds.
+  useEffect(() => {
+    if (!day) return;
+    const events = day.events;
+    const tick = () => {
+      const pre = prefixRef.current;
+      if (!pre) return;
+      const now = laSecondsNow();
+      const idxUpTo = (sec: number) => lowerBound(events, sec);
+      const written = idxUpTo(now + 1);
+      setReadout({ now, written });
+
+      const nowHour = Math.floor(now / 3600);
+      const dollars: number[] = [];
+      const count: number[] = [];
+      for (let h = 0; h < 24; h++) {
+        const start = h * 3600;
+        const end = Math.min((h + 1) * 3600, now);
+        if (start >= now) {
+          dollars.push(0);
+          count.push(0);
+          continue;
+        }
+        const a = idxUpTo(start);
+        const b = idxUpTo(end);
+        count.push(b - a);
+        dollars.push(pre.cumD[b] - pre.cumD[a]);
+      }
+      setBins({ dollars, count, maxD: pre.maxD, maxC: pre.maxC, nowHour });
+
+      // violations in the last 60 minutes → the drone's intensity.
+      const perHour = idxUpTo(now) - idxUpTo(now - 3600);
+      audioRef.current?.setDensity(perHour);
+    };
+    tick();
+    const iv = setInterval(tick, 4000);
+    return () => clearInterval(iv);
+  }, [day]);
+
+  const toggleSound = () => {
+    if (soundOn) {
+      audioRef.current?.stop();
+      setSoundOn(false);
+    } else {
+      audioRef.current ??= new PulseAudio();
+      audioRef.current.start();
+      setSoundOn(true);
+    }
+  };
+
   const families = day?.families ?? [];
+  const dayTotalDollars = prefixRef.current
+    ? prefixRef.current.cumD[lowerBound(day?.events ?? [], readout.now + 1)]
+    : 0;
 
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[#ece4d0]">
@@ -254,8 +361,71 @@ export default function PulsePage() {
           {clock(readout.now)}
         </div>
         <div className="text-[9px] opacity-70" style={{ letterSpacing: "0.15em" }}>
-          {readout.written.toLocaleString()} WRITTEN SINCE MIDNIGHT
+          {readout.written.toLocaleString()} TICKETS · ${Math.round(dayTotalDollars).toLocaleString()} SINCE MIDNIGHT
         </div>
+        <button
+          onClick={toggleSound}
+          className="mt-2 w-full border border-[var(--ink-strong)] py-1 text-[9px] hover:bg-[var(--paper-deep)]"
+          style={{ letterSpacing: "0.25em", color: "var(--ink)" }}
+        >
+          {soundOn ? "♪ SOUND ON — silence" : "♪ PLAY THE CITY"}
+        </button>
+      </div>
+
+      <Link
+        href="/"
+        className="absolute top-4 right-4 plate px-3 py-1.5 text-[9px] hover:opacity-100 opacity-70"
+        style={{ letterSpacing: "0.2em" }}
+      >
+        ← THE FLOOR
+      </Link>
+
+      {/* Trend graphs, fixed to the 24-hour day */}
+      {bins && (
+        <div className="plate absolute top-16 right-4 px-3 py-2.5 select-none">
+          <HourBars
+            label="$ / HOUR"
+            values={bins.dollars}
+            max={bins.maxD}
+            color="#a6543c"
+            nowHour={bins.nowHour}
+            total={`$${Math.round(dayTotalDollars).toLocaleString()}`}
+          />
+          <div className="h-2" />
+          <HourBars
+            label="TICKETS / HOUR"
+            values={bins.count}
+            max={bins.maxC}
+            color="#2a366a"
+            nowHour={bins.nowHour}
+            total={readout.written.toLocaleString()}
+          />
+          <div className="text-[7px] opacity-40 mt-1" style={{ letterSpacing: "0.2em" }}>
+            00h ———— 12h ———— 24h
+          </div>
+        </div>
+      )}
+
+      {/* The feed: the last dozen written */}
+      <div className="plate absolute bottom-4 right-4 px-3 py-2.5 select-none w-56">
+        <div className="text-[8px] mb-1.5 opacity-60" style={{ letterSpacing: "0.25em" }}>
+          THE LATEST
+        </div>
+        {feed.length === 0 && (
+          <div className="text-[9px] opacity-50 italic">the street is quiet…</div>
+        )}
+        {feed.map((it, i) => (
+          <div
+            key={it.id}
+            className="flex items-center gap-2 text-[9px] py-[1px]"
+            style={{ letterSpacing: "0.04em", opacity: 1 - i * 0.055 }}
+          >
+            <span className="tabular-nums opacity-60 w-9">{clock(it.t).slice(0, 5)}</span>
+            <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
+            <span className="truncate flex-1">{families[it.fam]?.label ?? "—"}</span>
+            <span className="tabular-nums opacity-70">${it.fine}</span>
+          </div>
+        ))}
       </div>
 
       {/* Legend */}
@@ -265,37 +435,11 @@ export default function PulsePage() {
         </div>
         {families.map((f) => (
           <div key={f.key} className="flex items-center gap-2 text-[9px]" style={{ letterSpacing: "0.08em" }}>
-            <span
-              className="inline-block w-2.5 h-2.5 rounded-full"
-              style={{ background: f.color }}
-            />
+            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: f.color }} />
             {f.label}
           </div>
         ))}
       </div>
-
-      {/* Heartbeat: the most recent ticket */}
-      {latest && (
-        <div className="plate absolute bottom-4 right-4 px-3 py-2.5 text-right select-none">
-          <div className="text-[8px] opacity-60" style={{ letterSpacing: "0.25em" }}>
-            LATEST
-          </div>
-          <div className="text-[11px] font-bold" style={{ letterSpacing: "0.08em", color: families[latest.fam]?.color }}>
-            {families[latest.fam]?.label ?? "—"}
-          </div>
-          <div className="text-[9px] opacity-70 tabular-nums">
-            ${latest.fine} · {clock(latest.t)}
-          </div>
-        </div>
-      )}
-
-      <Link
-        href="/"
-        className="absolute top-4 right-4 plate px-3 py-1.5 text-[9px] hover:opacity-100 opacity-70"
-        style={{ letterSpacing: "0.2em" }}
-      >
-        ← THE FLOOR
-      </Link>
     </div>
   );
 }
