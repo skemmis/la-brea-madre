@@ -175,7 +175,10 @@ export default function PulsePage() {
   const [soundOn, setSoundOn] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
   const [showTune, setShowTune] = useState(false);
-  const [feedOpen, setFeedOpen] = useState(false); // THE LATEST starts collapsed
+  // THE LATEST accordion: open on desktop, closed on phones.
+  const [feedOpen, setFeedOpen] = useState(
+    () => typeof window !== "undefined" && window.innerWidth >= 768
+  );
   const [, setTuneVer] = useState(0); // bump to re-render sliders after a change
   const [copied, setCopied] = useState(false);
 
@@ -447,7 +450,7 @@ export default function PulsePage() {
 
       {/* Masthead cartouche */}
       <div className="plate absolute top-4 left-4 px-5 py-4 select-none max-w-sm">
-        <div className="text-2xl font-bold" style={{ letterSpacing: "0.28em" }}>
+        <div className="text-lg md:text-2xl font-bold whitespace-nowrap" style={{ letterSpacing: "0.16em" }}>
           MUSIC FOR PARKING
         </div>
         <div className="text-[11px] mt-1.5 opacity-60" style={{ letterSpacing: "0.1em" }}>
@@ -456,24 +459,55 @@ export default function PulsePage() {
         {/* The headline figures: how many, how much — since midnight. */}
         <div className="mt-3 flex items-end gap-6">
           <div>
-            <div className="text-4xl font-bold tabular-nums leading-none">
+            <div className="text-xl md:text-3xl font-bold tabular-nums leading-none">
               {readout.written.toLocaleString()}
             </div>
-            <div className="text-[10px] opacity-55 mt-1" style={{ letterSpacing: "0.22em" }}>
+            <div className="text-[9px] opacity-55 mt-1" style={{ letterSpacing: "0.22em" }}>
               TICKETS
             </div>
           </div>
           <div>
-            <div className="text-4xl font-bold tabular-nums leading-none" style={{ color: "#a6543c" }}>
+            <div className="text-xl md:text-3xl font-bold tabular-nums leading-none" style={{ color: "#a6543c" }}>
               ${Math.round(dayTotalDollars).toLocaleString()}
             </div>
-            <div className="text-[10px] opacity-55 mt-1" style={{ letterSpacing: "0.22em" }}>
+            <div className="text-[9px] opacity-55 mt-1" style={{ letterSpacing: "0.22em" }}>
               IN FINES
             </div>
           </div>
         </div>
-        <div className="text-[11px] opacity-45 mt-2.5 tabular-nums" style={{ letterSpacing: "0.18em" }}>
+        <div className="text-[10px] opacity-45 mt-2 tabular-nums" style={{ letterSpacing: "0.18em" }}>
           {clock(readout.now)} · SINCE MIDNIGHT
+        </div>
+
+        {/* THE LATEST — an accordion at the foot of the modal */}
+        <div className="mt-3 pt-2 border-t border-[var(--ink-faint)]">
+          <button
+            onClick={() => setFeedOpen((o) => !o)}
+            className="w-full flex items-center justify-between text-[10px] opacity-60 hover:opacity-90"
+            style={{ letterSpacing: "0.25em", color: "var(--ink)" }}
+          >
+            <span>THE LATEST</span>
+            <span className="tabular-nums">{feedOpen ? "▾" : "▸"}</span>
+          </button>
+          {feedOpen && (
+            <div className="mt-1.5 max-h-[42vh] overflow-y-auto">
+              {feed.length === 0 && (
+                <div className="text-[11px] opacity-50 italic">the street is quiet…</div>
+              )}
+              {feed.map((it, i) => (
+                <div
+                  key={it.id}
+                  className="flex items-center gap-2 text-[10px] md:text-[12px] py-[2px]"
+                  style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
+                >
+                  <span className="tabular-nums opacity-60 w-9 shrink-0">{clock(it.t).slice(0, 5)}</span>
+                  <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
+                  <span className="truncate flex-1">{families[it.fam]?.label ?? "—"}</span>
+                  <span className="tabular-nums opacity-70 font-bold shrink-0">${it.fine}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -568,38 +602,6 @@ export default function PulsePage() {
         </div>
       )}
 
-      {/* The feed: the last dozen written — collapsible, starts collapsed */}
-      {!showTune && (
-      <div className="plate absolute bottom-4 right-4 px-4 py-3 select-none w-[340px] max-w-[80vw]">
-        <button
-          onClick={() => setFeedOpen((o) => !o)}
-          className="w-full flex items-center justify-between text-[11px] opacity-60 hover:opacity-90"
-          style={{ letterSpacing: "0.25em", color: "var(--ink)" }}
-        >
-          <span>THE LATEST</span>
-          <span className="tabular-nums">{feedOpen ? "▾" : "▸"}</span>
-        </button>
-        {feedOpen && (
-          <div className="mt-2">
-            {feed.length === 0 && (
-              <div className="text-[12px] opacity-50 italic">the street is quiet…</div>
-            )}
-            {feed.map((it, i) => (
-              <div
-                key={it.id}
-                className="flex items-center gap-2.5 text-[13px] py-[3px]"
-                style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
-              >
-                <span className="tabular-nums opacity-60 w-11 shrink-0">{clock(it.t).slice(0, 5)}</span>
-                <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
-                <span className="truncate flex-1">{families[it.fam]?.label ?? "—"}</span>
-                <span className="tabular-nums opacity-70 font-bold shrink-0">${it.fine}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      )}
 
       {/* Legend (hidden on phones — it crowds the small screen) */}
       <div className="plate absolute bottom-4 left-4 px-4 py-3 select-none hidden md:block">
