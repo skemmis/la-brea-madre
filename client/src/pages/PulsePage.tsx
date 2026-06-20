@@ -26,6 +26,7 @@ interface PulseEvent {
 interface PulseDay { day: string; count: number; families: Family[]; events: PulseEvent[] }
 interface FeedItem {
   fine: number; fam: number; t: number; id: number;
+  lat?: number; lng?: number;
   hood?: string; loc?: string; veh?: string; viol?: string;
 }
 interface Bins { dollars: number[]; count: number[]; maxD: number; maxC: number; nowHour: number }
@@ -71,6 +72,29 @@ function lowerBound(events: PulseEvent[], target: number): number {
     else hi = mid;
   }
   return lo;
+}
+
+// A hand-drawn (imperfect, trembling) circle: two summed sines so it never
+// closes true. Shared by the emanating ripples and the hover highlight.
+function strokeWobble(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, radius: number, amp: number, phase: number,
+  lobesA: number, lobesB: number, style: string, lineWidth: number
+) {
+  ctx.beginPath();
+  const STEPS = 56;
+  for (let i = 0; i <= STEPS; i++) {
+    const a = (i / STEPS) * Math.PI * 2;
+    const w = amp * Math.sin(lobesA * a + phase) + amp * 0.45 * Math.sin(lobesB * a - phase * 1.3);
+    const rr = radius + w;
+    const px = x + Math.cos(a) * rr;
+    const py = y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.strokeStyle = style;
+  ctx.lineWidth = lineWidth;
+  ctx.stroke();
 }
 
 // ─── A vintage bar chart, fixed to the 24-hour day ───────────────────────────
@@ -173,6 +197,7 @@ export default function PulsePage() {
   const feedRef = useRef<FeedItem[]>([]);
   const feedId = useRef(0);
   const densityRef = useRef(0); // violations/hour, for evening slow-down
+  const hoverIdRef = useRef<number | null>(null); // the feed row under the cursor
 
   const [day, setDay] = useState<PulseDay | null>(null);
   const [, setErr] = useState(false);
@@ -336,6 +361,7 @@ export default function PulsePage() {
         active.push({ ev, born: perf, life });
         feedRef.current.unshift({
           fine: ev.fine, fam: ev.f, t: ev.t, id: feedId.current++,
+          lat: ev.lat, lng: ev.lng,
           hood: ev.hood, loc: ev.loc, veh: ev.veh, viol: ev.viol,
         });
         audioRef.current?.note(ev.f, ev.fine);
@@ -378,30 +404,41 @@ export default function PulsePage() {
 
           // Wobble: two summed sines (a hand can't draw a true circle), with
           // amplitude swelling on the music. Lobe counts differ per ring.
-          const lobesA = 5 + ring;
-          const lobesB = 8 + ring * 2;
           const amp = radius * (0.04 + 0.018 * ring) + (1.5 + vib * 9) + radius * vib * 0.12;
           const phase = seed * (0.7 + ring) + t * (0.6 + ring * 0.25);
-
-          ctx.beginPath();
-          const STEPS = 56;
-          for (let i = 0; i <= STEPS; i++) {
-            const a = (i / STEPS) * Math.PI * 2;
-            const w =
-              amp * Math.sin(lobesA * a + phase) +
-              amp * 0.45 * Math.sin(lobesB * a - phase * 1.3);
-            const rr = radius + w;
-            const px = x + Math.cos(a) * rr;
-            const py = y + Math.sin(a) * rr;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          }
-          ctx.strokeStyle = `rgba(${r},${g},${b},${fade * 0.6})`;
-          ctx.lineWidth = 1.1;
-          ctx.stroke();
+          strokeWobble(ctx, x, y, radius, amp, phase, 5 + ring, 8 + ring * 2, `rgba(${r},${g},${b},${fade * 0.6})`, 1.1);
         }
       }
       active = next;
+
+      // Persistent dots: one per violation still in THE LATEST, anchored where
+      // it was written. They outlast the ripple and vanish only when the ticket
+      // scrolls out of the feed. The hovered row gets a wavering halo.
+      const hoverId = hoverIdRef.current;
+      for (const it of feedRef.current) {
+        if (it.lng == null || it.lat == null) continue;
+        const { x, y } = map.project([it.lng, it.lat]);
+        if (x < -40 || y < -40 || x > canvas.clientWidth + 40 || y > canvas.clientHeight + 40) continue;
+        const [r, g, b] = rgb(it.fam);
+        const hot = it.id === hoverId;
+        if (hot) {
+          for (let ring = 0; ring < 2; ring++) {
+            const radius = 9 + ring * 7 + Math.sin(t * 1.4 + ring) * 1.5;
+            const amp = 2 + vib * 9;
+            const phase = it.t * (0.7 + ring) + t * (0.9 + ring * 0.3);
+            strokeWobble(ctx, x, y, radius, amp, phase, 5 + ring, 8 + ring * 2, `rgba(${r},${g},${b},0.75)`, 1.3);
+          }
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, hot ? 3.4 : 2.3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r},${g},${b},0.9)`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, hot ? 5.5 : 4, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${r},${g},${b},0.32)`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     };
     raf = requestAnimationFrame(frame);
     return () => {
@@ -449,6 +486,11 @@ export default function PulsePage() {
     const iv = setInterval(tick, 4000);
     return () => clearInterval(iv);
   }, [day]);
+
+  // Mirror the hovered/tapped feed row into a ref the canvas loop can read.
+  useEffect(() => {
+    hoverIdRef.current = tip?.item.id ?? null;
+  }, [tip]);
 
   const toggleSound = () => {
     if (soundOn) {
