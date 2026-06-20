@@ -16,7 +16,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { apiRequest } from "../lib/queryClient";
 import { SHEET_STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "../lib/sheetStyle";
-import { PulseAudio, DIALS, eveningSlow } from "../lib/pulseAudio";
+import { PulseAudio, DIALS, eveningSlow, IS_MOBILE } from "../lib/pulseAudio";
 
 interface Family { key: string; label: string; color: string }
 interface PulseEvent {
@@ -81,13 +81,16 @@ function lowerBound(events: PulseEvent[], target: number): number {
 
 // A hand-drawn (imperfect, trembling) circle: two summed sines so it never
 // closes true. Shared by the emanating ripples and the hover highlight.
+// Fewer path segments on phones — the per-frame trig here was a top main-thread
+// cost, and a thread busy drawing can't keep the audio buffer fed (clicks).
+const WOBBLE_STEPS = IS_MOBILE ? 32 : 56;
 function strokeWobble(
   ctx: CanvasRenderingContext2D,
   x: number, y: number, radius: number, amp: number, phase: number,
   lobesA: number, lobesB: number, style: string, lineWidth: number
 ) {
   ctx.beginPath();
-  const STEPS = 56;
+  const STEPS = WOBBLE_STEPS;
   for (let i = 0; i <= STEPS; i++) {
     const a = (i / STEPS) * Math.PI * 2;
     const w = amp * Math.sin(lobesA * a + phase) + amp * 0.45 * Math.sin(lobesB * a - phase * 1.3);
@@ -330,13 +333,17 @@ export default function PulsePage() {
     let cursor = -1;
     let lastNow = -1;
     let vib = 0; // smoothed audio level driving the line tremble
+    let lastFeedPush = 0; // throttle the React feed re-render during surges
 
     type Live = { ev: PulseEvent; born: number; life: number };
     let active: Live[] = [];
     const rgb = (f: number) => hexToRgb(dayRef.current?.families[f]?.color ?? "#6b5a3e");
 
     const fit = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Phones run at DPR 2–3; rendering the canvas at native resolution is 4–9×
+      // the fill rate. At 1× the map underneath stays crisp and the overlay's
+      // hand-drawn lines read fine — and the main thread is freed for audio.
+      const dpr = IS_MOBILE ? 1 : Math.min(2, window.devicePixelRatio || 1);
       canvas.width = canvas.clientWidth * dpr;
       canvas.height = canvas.clientHeight * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -375,8 +382,13 @@ export default function PulsePage() {
         spawned = true;
       }
       if (spawned) {
-        feedRef.current = feedRef.current.slice(0, 12);
-        setFeed(feedRef.current.slice());
+        feedRef.current = feedRef.current.slice(0, 12); // keep the dots bounded
+        // But only re-render the feed list a few times a second — a setState per
+        // frame during the dawn surge churned React on the thread audio needs.
+        if (perf - lastFeedPush > 200) {
+          lastFeedPush = perf;
+          setFeed(feedRef.current.slice());
+        }
       }
 
       // The sound's loudness makes every line tremble; even silent, a faint

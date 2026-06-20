@@ -68,13 +68,13 @@ export function eveningSlow(perHour: number): number {
 // simultaneous voices starves the audio thread and the sound crackles. On
 // mobile we cap the two heaviest dials — a shorter impulse and fewer voices —
 // while leaving DIALS itself as the authored desktop defaults.
-const IS_MOBILE =
+export const IS_MOBILE =
   typeof navigator !== "undefined" &&
   (/Mobi|Android|iPhone|iPod/i.test(navigator.userAgent) ||
     // iPadOS 13+ masquerades as desktop Safari; catch it by its touch points.
     (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
-const MOBILE_REVERB_MAX = 2.5; // seconds — convolution cost scales with length
-const MOBILE_VOICE_CAP = 6;
+const MOBILE_REVERB_MAX = 2.0; // seconds — convolution cost scales with length
+const MOBILE_VOICE_CAP = 4;
 
 /** Reverb tail length actually used — clamped on mobile. */
 function effReverbSeconds(): number {
@@ -119,7 +119,16 @@ export class PulseAudio {
     if (this.running) return;
     const Ctx = window.AudioContext || (window as any).webkitAudioContext;
     if (!Ctx) return;
-    const ctx: AudioContext = new Ctx();
+    // "playback" asks the browser for a LARGE audio buffer. The default,
+    // "interactive", chases the smallest buffer for low latency and underruns
+    // on weak mobile hardware — the clicks/pops people heard on Android. This
+    // is an ambient score; latency is irrelevant, stability is everything.
+    let ctx: AudioContext;
+    try {
+      ctx = new Ctx({ latencyHint: "playback" });
+    } catch {
+      ctx = new Ctx(); // older webkit rejects the options dict
+    }
     this.ctx = ctx;
     const t = ctx.currentTime;
 
@@ -218,10 +227,14 @@ export class PulseAudio {
     const o1 = ctx.createOscillator();
     o1.type = "sine";
     o1.frequency.value = freq;
-    const o2 = ctx.createOscillator();
-    o2.type = "triangle";
-    o2.frequency.value = freq;
-    o2.detune.value = -6; // a hair of chorus
+    // The second, detuned voice is pure chorus polish — drop it on mobile to
+    // halve the oscillator count (and the per-note CPU) where it crackles.
+    const o2 = IS_MOBILE ? null : ctx.createOscillator();
+    if (o2) {
+      o2.type = "triangle";
+      o2.frequency.value = freq;
+      o2.detune.value = -6; // a hair of chorus
+    }
 
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
@@ -230,7 +243,7 @@ export class PulseAudio {
     const g = ctx.createGain();
     g.gain.value = 0;
     o1.connect(lp);
-    o2.connect(lp);
+    o2?.connect(lp);
     lp.connect(g);
     g.connect(this.master); // dry
     g.connect(this.reverb); // and into the tail
@@ -245,9 +258,11 @@ export class PulseAudio {
     g.gain.exponentialRampToValueAtTime(0.0001, now + A + R);
 
     o1.start(now);
-    o2.start(now);
     o1.stop(now + A + R + 0.1);
-    o2.stop(now + A + R + 0.1);
+    if (o2) {
+      o2.start(now);
+      o2.stop(now + A + R + 0.1);
+    }
     this.voices++;
     o1.onended = () => {
       this.voices--;
