@@ -21,8 +21,10 @@ const SOCRATA_APP_TOKEN = process.env.SOCRATA_APP_TOKEN || "";
 const UA = "la-brea-madre/pulse (skemmis@gmail.com)";
 
 // A day is "dense enough" to replay if it has at least this many geolocated
-// tickets — filters out the dataset's sparse, error-riddled recent tail.
-const DENSE_MIN = 4000;
+// tickets — high enough to reject the dataset's sparse, error-riddled tail
+// (which runs 1–3 rows/day), low enough to admit a real, quieter weekend
+// (~2–3k) so weekday matching can still find last Saturday.
+const DENSE_MIN = 1000;
 const CACHE_MS = 6 * 60 * 60 * 1000; // re-pick the donor day every 6h
 
 // ─── Violation families: the palette of the pulse ─────────────────────────────
@@ -158,8 +160,14 @@ async function socrata<T>(params: Record<string, string>): Promise<T> {
   return res.data;
 }
 
-/** The newest day with dense, geolocated data — the day we replay. */
-async function freshestDenseDay(): Promise<string> {
+/**
+ * The day we replay: the most recent dense, geolocated day that shares TODAY's
+ * weekday (LA time). Street sweeping is scheduled by weekday, so matching the
+ * weekday keeps the morning surge on the right streets — a Monday replays last
+ * Monday, not a stray Tuesday. Falls back week-by-week if the nearest matching
+ * day is sparse or not yet posted, and finally to the freshest dense day.
+ */
+async function donorDay(): Promise<string> {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const cutoff = `${tomorrow.toISOString().split("T")[0]}T00:00:00.000`;
@@ -169,11 +177,19 @@ async function freshestDenseDay(): Promise<string> {
     $group: "date_trunc_ymd(issue_date)",
     $having: `count(1) > ${DENSE_MIN}`,
     $order: "day DESC",
-    $limit: "1",
+    $limit: "60",
   });
-  const day = rows?.[0]?.day;
-  if (!day) throw new Error("no dense citation day found");
-  return String(day).split("T")[0];
+  const dense = (rows ?? []).map((r) => String(r.day).split("T")[0]).filter(Boolean);
+  if (!dense.length) throw new Error("no dense citation day found");
+
+  // Today's weekday, LA time, as a calendar date (so its weekday is fixed).
+  const laToday = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+  const targetDow = new Date(`${laToday}T12:00:00Z`).getUTCDay();
+  const dowOf = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay();
+
+  // dense is newest-first; the first weekday match IS the most recent one.
+  const match = dense.find((d) => dowOf(d) === targetDow);
+  return match ?? dense[0]; // fall back to freshest dense if no weekday match
 }
 
 /** Build the replay stream for one donor day. */
@@ -226,7 +242,7 @@ export async function getPulseDay(): Promise<PulseDay> {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const day = await freshestDenseDay();
+      const day = await donorDay();
       // Same donor day still current? Keep the built stream, refresh the clock.
       if (cache && cache.data.day === day) {
         cache = { at: Date.now(), data: cache.data };
