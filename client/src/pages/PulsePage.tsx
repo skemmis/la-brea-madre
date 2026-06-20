@@ -33,15 +33,20 @@ interface Bins { dollars: number[]; count: number[]; maxD: number; maxC: number;
 
 const BLOOM_MS = 6500; // how long each ticket's bloom lingers, like drying ink
 
+// Built once, reused every frame — constructing an Intl.DateTimeFormat is
+// expensive enough that doing it 60×/sec was its own source of jank (and, by
+// hogging the main thread, of audio crackle).
+const LA_TIME_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Los_Angeles",
+  hour12: false,
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
 /** Current Los Angeles wall-clock as seconds since LA midnight. */
 function laSecondsNow(): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(new Date());
+  const parts = LA_TIME_FMT.formatToParts(new Date());
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
   let h = get("hour");
   if (h === 24) h = 0;

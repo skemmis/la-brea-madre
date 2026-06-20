@@ -64,6 +64,27 @@ export function eveningSlow(perHour: number): number {
   return 1 + (1 - d) * (DIALS.eveningSlowMax - 1);
 }
 
+// Phones can't carry the desktop graph: a 7.5s convolution reverb plus ten
+// simultaneous voices starves the audio thread and the sound crackles. On
+// mobile we cap the two heaviest dials — a shorter impulse and fewer voices —
+// while leaving DIALS itself as the authored desktop defaults.
+const IS_MOBILE =
+  typeof navigator !== "undefined" &&
+  (/Mobi|Android|iPhone|iPod/i.test(navigator.userAgent) ||
+    // iPadOS 13+ masquerades as desktop Safari; catch it by its touch points.
+    (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+const MOBILE_REVERB_MAX = 2.5; // seconds — convolution cost scales with length
+const MOBILE_VOICE_CAP = 6;
+
+/** Reverb tail length actually used — clamped on mobile. */
+function effReverbSeconds(): number {
+  return IS_MOBILE ? Math.min(DIALS.reverbSeconds, MOBILE_REVERB_MAX) : DIALS.reverbSeconds;
+}
+/** Max simultaneous voices actually allowed — clamped on mobile. */
+function effVoiceCap(): number {
+  return IS_MOBILE ? Math.min(DIALS.voiceCap, MOBILE_VOICE_CAP) : DIALS.voiceCap;
+}
+
 /** A synthetic reverb impulse: noise with an exponential decay tail. */
 function impulse(ctx: AudioContext, seconds: number, decay: number): AudioBuffer {
   const rate = ctx.sampleRate;
@@ -120,15 +141,16 @@ export class PulseAudio {
     this.buf = new Uint8Array(analyser.fftSize);
 
     // The long reverb tail every voice and the drone share.
+    const revSecs = effReverbSeconds();
     const reverb = ctx.createConvolver();
-    reverb.buffer = impulse(ctx, DIALS.reverbSeconds, DIALS.reverbDecay);
+    reverb.buffer = impulse(ctx, revSecs, DIALS.reverbDecay);
     const wet = ctx.createGain();
     wet.gain.value = DIALS.reverbWet;
     reverb.connect(wet);
     wet.connect(master);
     this.reverb = reverb;
     this.wet = wet;
-    this.lastReverb = { s: DIALS.reverbSeconds, d: DIALS.reverbDecay };
+    this.lastReverb = { s: revSecs, d: DIALS.reverbDecay };
 
     // The drone: D1 + A1 sines under a lowpass, gain/cutoff driven by density.
     const bassFilter = ctx.createBiquadFilter();
@@ -177,9 +199,10 @@ export class PulseAudio {
     this.lfo.frequency.setTargetAtTime(DIALS.breathRate, now, 0.15);
     this.lfoGain.gain.setTargetAtTime(DIALS.breathDepth, now, 0.15);
     // Rebuilding the impulse is the one expensive change — only on demand.
-    if (this.lastReverb.s !== DIALS.reverbSeconds || this.lastReverb.d !== DIALS.reverbDecay) {
-      this.reverb.buffer = impulse(ctx, DIALS.reverbSeconds, DIALS.reverbDecay);
-      this.lastReverb = { s: DIALS.reverbSeconds, d: DIALS.reverbDecay };
+    const revSecs = effReverbSeconds();
+    if (this.lastReverb.s !== revSecs || this.lastReverb.d !== DIALS.reverbDecay) {
+      this.reverb.buffer = impulse(ctx, revSecs, DIALS.reverbDecay);
+      this.lastReverb = { s: revSecs, d: DIALS.reverbDecay };
     }
     this.setDensity(this.lastDensity); // re-apply drone gain/cutoff
   }
@@ -187,7 +210,7 @@ export class PulseAudio {
   /** Sound one ticket: its family's note, as a slow reverberant pad. */
   note(family: number, fine: number) {
     const ctx = this.ctx;
-    if (!ctx || !this.running || this.voices > DIALS.voiceCap) return;
+    if (!ctx || !this.running || this.voices > effVoiceCap()) return;
     const now = ctx.currentTime;
     let freq = DIALS.notes[family] ?? 220;
     if (fine > DIALS.shimmerFineThreshold) freq *= 2; // a shimmer an octave up
