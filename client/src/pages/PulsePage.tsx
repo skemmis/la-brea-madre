@@ -16,7 +16,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { apiRequest } from "../lib/queryClient";
 import { SHEET_STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "../lib/sheetStyle";
-import { PulseAudio, DIALS } from "../lib/pulseAudio";
+import { PulseAudio, DIALS, eveningSlow } from "../lib/pulseAudio";
 
 interface Family { key: string; label: string; color: string }
 interface PulseEvent {
@@ -172,6 +172,7 @@ export default function PulsePage() {
   const audioRef = useRef<PulseAudio | null>(null);
   const feedRef = useRef<FeedItem[]>([]);
   const feedId = useRef(0);
+  const densityRef = useRef(0); // violations/hour, for evening slow-down
 
   const [day, setDay] = useState<PulseDay | null>(null);
   const [, setErr] = useState(false);
@@ -299,7 +300,7 @@ export default function PulsePage() {
     let lastNow = -1;
     let vib = 0; // smoothed audio level driving the line tremble
 
-    type Live = { ev: PulseEvent; born: number };
+    type Live = { ev: PulseEvent; born: number; life: number };
     let active: Live[] = [];
     const rgb = (f: number) => hexToRgb(dayRef.current?.families[f]?.color ?? "#6b5a3e");
 
@@ -329,9 +330,10 @@ export default function PulsePage() {
 
       const perf = performance.now();
       let spawned = false;
+      const life = BLOOM_MS * eveningSlow(densityRef.current);
       while (cursor < events.length && events[cursor].t <= now) {
         const ev = events[cursor];
-        active.push({ ev, born: perf });
+        active.push({ ev, born: perf, life });
         feedRef.current.unshift({
           fine: ev.fine, fam: ev.f, t: ev.t, id: feedId.current++,
           hood: ev.hood, loc: ev.loc, veh: ev.veh, viol: ev.viol,
@@ -355,7 +357,7 @@ export default function PulsePage() {
       ctx.lineJoin = "round";
       const next: Live[] = [];
       for (const live of active) {
-        const age = (perf - live.born) / BLOOM_MS;
+        const age = (perf - live.born) / live.life;
         if (age >= 1) continue;
         next.push(live);
         const { x, y } = map.project([live.ev.lng, live.ev.lat]);
@@ -438,8 +440,9 @@ export default function PulsePage() {
       }
       setBins({ dollars, count, maxD: pre.maxD, maxC: pre.maxC, nowHour });
 
-      // violations in the last 60 minutes → the drone's intensity.
+      // violations in the last 60 minutes → the drone's intensity + slow-down.
       const perHour = idxUpTo(now) - idxUpTo(now - 3600);
+      densityRef.current = perHour;
       audioRef.current?.setDensity(perHour);
     };
     tick();

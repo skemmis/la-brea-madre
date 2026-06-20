@@ -51,7 +51,18 @@ export const DIALS = {
 
   breathRate: 0.15, // Hz of the slow volume "breathing" on the whole bed
   breathDepth: 0.12, // how deep the breath swells
+
+  // When the city is quiet (evening), let notes ring much longer so the rare
+  // ones are unmissable; at the morning peak, snap back to the base lengths.
+  eveningSlowMax: 3, // up to 3× the release/attack when dead quiet
+  eveningSlowFull: 180, // violations/hour at which slowness returns to 1×
 };
+
+/** Slowness multiplier from density: max when quiet, 1 at the full threshold. */
+export function eveningSlow(perHour: number): number {
+  const d = Math.min(1, Math.max(0, perHour) / DIALS.eveningSlowFull);
+  return 1 + (1 - d) * (DIALS.eveningSlowMax - 1);
+}
 
 /** A synthetic reverb impulse: noise with an exponential decay tail. */
 function impulse(ctx: AudioContext, seconds: number, decay: number): AudioBuffer {
@@ -202,8 +213,10 @@ export class PulseAudio {
     g.connect(this.reverb); // and into the tail
 
     const peak = Math.min(0.9, 0.35 + fine / 400) * DIALS.notePeak;
-    const A = DIALS.noteAttack;
-    const R = DIALS.noteRelease;
+    // Quiet hours stretch the tail (and gently the swell) so a lone ticket lingers.
+    const slow = eveningSlow(this.lastDensity);
+    const A = DIALS.noteAttack * (1 + (slow - 1) * 0.4);
+    const R = DIALS.noteRelease * slow;
     g.gain.setValueAtTime(0, now);
     g.gain.linearRampToValueAtTime(peak, now + A);
     g.gain.exponentialRampToValueAtTime(0.0001, now + A + R);
