@@ -180,7 +180,7 @@ export default function PulsePage() {
   const [bins, setBins] = useState<Bins | null>(null);
   const [soundOn, setSoundOn] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
-  const [showTune, setShowTune] = useState(false);
+  const [showTune] = useState(false); // mixing desk hidden for now (no entry point)
   // THE LATEST accordion: open on desktop, closed on phones.
   const [feedOpen, setFeedOpen] = useState(
     () => typeof window !== "undefined" && window.innerWidth >= 768
@@ -477,7 +477,7 @@ export default function PulsePage() {
           MUSIC FOR PARKING
         </div>
         <div className="text-[11px] mt-1.5 opacity-60" style={{ letterSpacing: "0.1em" }}>
-          REAL LOS ANGELES PARKING DATA
+          REAL-TIME LOS ANGELES PARKING VIOLATIONS
         </div>
         {/* The headline figures: how many, how much — since midnight. */}
         <div className="mt-3 flex items-end gap-6">
@@ -534,16 +534,6 @@ export default function PulsePage() {
             ))}
           </div>
         </div>
-      </div>
-
-      <div className="absolute top-4 right-4 flex gap-2">
-        <button
-          onClick={() => setShowTune((s) => !s)}
-          className="plate px-4 py-2 text-[11px] hover:opacity-100 opacity-70"
-          style={{ letterSpacing: "0.2em", color: "var(--ink)" }}
-        >
-          {showTune ? "✕ CLOSE" : "⚙ TUNE"}
-        </button>
       </div>
 
       {/* The mixing desk — live audio dials + export */}
