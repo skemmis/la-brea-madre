@@ -216,7 +216,8 @@ export default function PulsePage() {
   const [tip, setTip] = useState<{ item: FeedItem; left: number; top: number } | null>(null);
 
   // Place a detail tooltip beside a feed row, clamped to the screen.
-  const tipFor = (item: FeedItem, el: HTMLElement): { item: FeedItem; left: number; top: number } => {
+  const tipFor = (item: FeedItem, el: HTMLElement | null): { item: FeedItem; left: number; top: number } => {
+    if (!el) return { item, left: 16, top: 90 };
     const r = el.getBoundingClientRect();
     const W = 240, H = 150;
     let left = r.right + 8;
@@ -569,7 +570,12 @@ export default function PulsePage() {
                 style={{ letterSpacing: "0.02em", opacity: 1 - i * 0.05 }}
                 onPointerEnter={(e) => { if (e.pointerType === "mouse") setTip(tipFor(it, e.currentTarget)); }}
                 onPointerLeave={(e) => { if (e.pointerType === "mouse") setTip((t) => (t?.item.id === it.id ? null : t)); }}
-                onClick={(e) => setTip((t) => (t?.item.id === it.id ? null : tipFor(it, e.currentTarget)))}
+                onClick={(e) => {
+                  // Capture the element now — currentTarget is null by the time
+                  // the state updater runs (this crashed the page on dblclick).
+                  const el = e.currentTarget;
+                  setTip((t) => (t?.item.id === it.id ? null : tipFor(it, el)));
+                }}
               >
                 <span className="tabular-nums opacity-60 w-9 shrink-0">{clock(it.t).slice(0, 5)}</span>
                 <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: families[it.fam]?.color }} />
