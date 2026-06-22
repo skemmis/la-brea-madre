@@ -95,8 +95,10 @@ svg+=layer(major,MAJ,0.006,0.85);
 svg+=layer(free,FREE,0.013,0.9);
 placed.push([0.3,6.45,2.55,8.4]); // reserve compass + cartouche corner
 let labelSvg="";
-for(const f of cy.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,CYC,1.05,"normal",false);
-const TOP45=nb.sort((a,b)=>b.properties.area-a.properties.area).slice(0,45);
+// surrounding-city labels (Glendale, Beverly Hills, etc.) removed — City of LA only
+// Curated 45: a mix of highly-ticketed hotspots and well-known names, spread across regions
+const SELECTED=new Set(["DOWNTOWN","KOREATOWN","WESTLAKE","MID-WILSHIRE","HOLLYWOOD","EAST HOLLYWOOD","BEVERLY GROVE","FAIRFAX","HANCOCK PARK","MID-CITY","BOYLE HEIGHTS","LINCOLN HEIGHTS","EL SERENO","CHINATOWN","HOLLYWOOD HILLS","LOS FELIZ","SILVER LAKE","ECHO PARK","ATWATER VILLAGE","HIGHLAND PARK","EAGLE ROCK","VENICE","WESTWOOD","SAWTELLE","BRENTWOOD","WEST LOS ANGELES","MAR VISTA","PICO-ROBERTSON","WESTCHESTER","NORTH HOLLYWOOD","VAN NUYS","SHERMAN OAKS","STUDIO CITY","ENCINO","CANOGA PARK","PANORAMA CITY","RESEDA","FLORENCE","EXPOSITION PARK","SOUTH PARK","HISTORIC SOUTH-CENTRAL","WATTS","BALDWIN HILLS/CRENSHAW","LEIMERT PARK","PICO-UNION"]);
+const TOP45=nb.filter(f=>SELECTED.has(f.properties.name.toUpperCase())).sort((a,b)=>b.properties.area-a.properties.area);
 let nplaced=0,missed=[];for(const f of TOP45){const r=mkLabel(f,NBC,1.0,"bold",true);if(r)nplaced++;else missed.push(f.properties.name);labelSvg+=r;}
 console.log("neighborhood titles placed:",nplaced,"of 45; missed:",missed.join("|")||"none");
 fs.writeFileSync("physical-pulse/led-neighborhoods.json",JSON.stringify(TOP45.map((f,i)=>({idx:i,name:f.properties.name,lng:f.geometry.coordinates[0],lat:f.geometry.coordinates[1]})),null,1));
