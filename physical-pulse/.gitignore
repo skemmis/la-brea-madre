@@ -1,1 +1,2 @@
-physical-pulse/data/*.json
+# Regenerable OSM cache (pull via Overpass — see generate-tampa-style.cjs)
+data/
