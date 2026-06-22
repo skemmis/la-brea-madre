@@ -1,5 +1,6 @@
-// Neighborhood-forward engrave map for the physical Pulse — labels are the hero,
-// region outlines + freeways are faint context, dense streets dropped.
+// Composite engrave map for the physical Pulse: terrain contours (faint) +
+// major streets (freeways + arterials, local grid dropped) + neighborhood
+// labels as the hero. Vintage source aesthetic. Built from the app's geo data.
 const fs=require("fs");
 const G="client/public/geo/";
 const LNG_MIN=-118.497, LNG_MAX=-118.183, LAT_MIN=33.910, LAT_MAX=34.170; // ≈18×18mi
@@ -21,30 +22,30 @@ function polylines(coords){const out=[];let cur=null;const e=1e-9;
   if(cur&&cur.length>=2)out.push(cur);return out;}
 const path=pls=>pls.map(pl=>"M"+pl.map(c=>PX(c).toFixed(3)+","+PY(c).toFixed(3)).join("L")).join(" ");
 const load=f=>JSON.parse(fs.readFileSync(G+f,"utf8")).features;
-// region outlines (neighborhood polygons)
-let hoods=[]; for(const f of load("la-city-land.geojson")){const ring=f.geometry.coordinates[0];
-  for(const pl of polylines(ring))hoods.push(pl);}
-// freeways only — faint orientation
-let fwy=[]; for(const f of load("la-roads.geojson"))for(const pl of polylines(f.geometry.coordinates))fwy.push(pl);
-let coast=[]; for(const f of load("socal-coastline.geojson"))for(const pl of polylines(f.geometry.coordinates))coast.push(pl);
-// labels, sized by area
+const linesOf=(feats,filt)=>{const o=[];for(const f of feats){if(filt&&!filt(f))continue;
+  for(const pl of polylines(f.geometry.coordinates))o.push(pl);}return o;};
+const terrain = linesOf(load("socal-contours.geojson"));
+const major   = linesOf(load("la-streets.geojson"), f=>(f.properties.t||0)>=1); // arterials, no local grid
+const fwy     = linesOf(load("la-roads.geojson"));
+const coast   = linesOf(load("socal-coastline.geojson"));
 const nb=load("la-neighborhood-labels.geojson").filter(f=>inBox(f.geometry.coordinates));
 const cy=load("la-city-labels.geojson").filter(f=>inBox(f.geometry.coordinates));
-const areas=nb.map(f=>f.properties.area).sort((a,b)=>a-b);
-const amin=Math.sqrt(areas[0]||1e-4), amax=Math.sqrt(areas[areas.length-1]||1e-3);
-const fsize=a=>{const t=(Math.sqrt(a)-amin)/((amax-amin)||1);return Math.max(0.058,Math.min(0.155,0.058+t*0.097));};
+const ar=nb.map(f=>f.properties.area).sort((a,b)=>a-b);
+const amin=Math.sqrt(ar[0]||1e-4), amax=Math.sqrt(ar[ar.length-1]||1e-3);
+const fsize=a=>{const t=(Math.sqrt(a)-amin)/((amax-amin)||1);return Math.max(0.058,Math.min(0.15,0.058+t*0.092));};
 function label(f,col,scale,weight){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
-  const name=f.properties.name.toUpperCase();
   return `<text x="${PX(c).toFixed(3)}" y="${PY(c).toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
     `font-family="Georgia, 'Times New Roman', serif" font-weight="${weight}" text-anchor="middle" `+
-    `letter-spacing="${(s*0.14).toFixed(3)}" dominant-baseline="middle">${name}</text>`;}
+    `letter-spacing="${(s*0.14).toFixed(3)}" dominant-baseline="middle">${f.properties.name.toUpperCase()}</text>`;}
+const layer=(pls,col,sw)=>`<g stroke="${col}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="${path(pls)}"/></g>\n`;
 let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}in" height="${H}in" viewBox="0 0 ${W} ${H}">\n`;
 svg+=`<rect width="${W}" height="${H}" fill="#f4efe1"/>\n`;
-svg+=`<g stroke="#c9c0aa" stroke-width="0.009" fill="none" stroke-linejoin="round"><path d="${path(fwy)}"/></g>\n`;       // freeways faint
-svg+=`<g stroke="#9aa0b8" stroke-width="0.006" fill="none" stroke-linejoin="round"><path d="${path(hoods)}"/></g>\n`;    // hood outlines
-svg+=`<g stroke="#2a6e7a" stroke-width="0.013" fill="none"><path d="${path(coast)}"/></g>\n`;                            // coast
-for(const f of cy) svg+=label(f,"#7a8199",1.25,"normal")+"\n";   // surrounding cities, lighter
-for(const f of nb) svg+=label(f,"#15233f",1.0,"bold")+"\n";      // neighborhoods, hero
+svg+=layer(terrain,"#cdbf9e",0.004);   // terrain contours, faintest
+svg+=layer(major,  "#97a0bd",0.006);   // major streets / arterials
+svg+=layer(fwy,    "#2b3a63",0.017);   // freeways, boldest line
+svg+=layer(coast,  "#2a6e7a",0.013);   // coastline
+for(const f of cy) svg+=label(f,"#7a8199",1.22,"normal")+"\n";
+for(const f of nb) svg+=label(f,"#15233f",1.0,"bold")+"\n";
 svg+="</svg>\n";
-fs.writeFileSync("physical-pulse/pulse-map-neighborhoods-10in.svg",svg);
-console.log("hood outlines:",hoods.length,"freeway:",fwy.length,"labels:",nb.length,"+cities",cy.length,"bytes:",fs.statSync("physical-pulse/pulse-map-neighborhoods-10in.svg").size);
+fs.writeFileSync("physical-pulse/pulse-map-composite-10in.svg",svg);
+console.log("terrain:",terrain.length,"major:",major.length,"fwy:",fwy.length,"labels:",nb.length,"+cities",cy.length,"bytes:",fs.statSync("physical-pulse/pulse-map-composite-10in.svg").size);
