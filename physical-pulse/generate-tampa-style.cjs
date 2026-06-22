@@ -52,18 +52,20 @@ const nb=load("la-neighborhood-labels.geojson").filter(f=>inBox(f.geometry.coord
 const cy=load("la-city-labels.geojson").filter(f=>inBox(f.geometry.coordinates));
 const ar=nb.map(f=>f.properties.area).sort((a,b)=>a-b);
 const amin=Math.sqrt(ar[0]||1e-4),amax=Math.sqrt(ar[ar.length-1]||1e-3);
-const fsize=a=>{const t=(Math.sqrt(a)-amin)/((amax-amin)||1);return Math.max(0.052,Math.min(0.14,0.052+t*0.088));};
+const fsize=a=>{const t=(Math.sqrt(a)-amin)/((amax-amin)||1);return Math.max(0.043,Math.min(0.135,0.043+t*0.092));};
 const placed=[]; // bboxes [x0,y0,x1,y1]
-function tryPlace(cx,cy_,s,len){const w=len*s*0.60, h=s; const pad=0.045;
+const M=0.27;
+function tryPlace(cx,cy_,s,len){const w=len*s*0.72, h=s*0.95; const pad=0.012;
+  cx=Math.min(Math.max(cx, M+w/2), W-M-w/2); cy_=Math.min(Math.max(cy_, M+h/2), H-M-h/2);
   const bb=[cx-w/2-pad,cy_-h/2-pad,cx+w/2+pad,cy_+h/2+pad];
   for(const p of placed){ if(!(bb[2]<p[0]||bb[0]>p[2]||bb[3]<p[1]||bb[1]>p[3])) return null; }
-  placed.push(bb); return true;}
+  placed.push(bb); return [cx,cy_];}
 function mkLabel(f,col,scale,weight){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
   const name=f.properties.name.toUpperCase();
-  if(!tryPlace(PX(c),PY(c),s,name.length)) return "";
-  return `<text x="${PX(c).toFixed(3)}" y="${PY(c).toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
+  const pos=tryPlace(PX(c),PY(c),s,name.length); if(!pos) return "";
+  return `<text x="${pos[0].toFixed(3)}" y="${pos[1].toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
     `font-family="Georgia,'Times New Roman',serif" font-weight="${weight}" text-anchor="middle" `+
-    `letter-spacing="${(s*0.1).toFixed(3)}" dominant-baseline="middle">${name}</text>\n`;}
+    `letter-spacing="${(s*0.06).toFixed(3)}" dominant-baseline="middle">${name}</text>\n`;}
 const layer=(pls,col,sw,op=1)=>`<g stroke="${col}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"><path d="${linePath(pls)}"/></g>\n`;
 function compass(x,y,r,col){let s=`<g>`;for(let i=0;i<8;i++){const a=i*Math.PI/4,lr=(i%2?r*0.4:r);
   const x2=x+Math.sin(a)*lr,y2=y-Math.cos(a)*lr,w2=i%2?0.03:0.05;
@@ -81,13 +83,14 @@ svg+=layer(minor,MIN,0.0035,0.7);
 svg+=layer(major,MAJ,0.006,0.85);
 svg+=layer(free,FREE,0.013,0.9);
 // place cities first (priority), then neighborhoods by area desc
+placed.push([0.3,4.95,2.5,6.9]); // reserve compass + cartouche corner
 let labelSvg="";
 for(const f of cy.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,CYC,1.05,"normal");
-for(const f of nb.sort((a,b)=>b.properties.area-a.properties.area).slice(0,32)) labelSvg+=mkLabel(f,NBC,1.0,"bold");
+for(const f of nb.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,NBC,1.0,"bold");
 svg+=labelSvg;
-svg+=compass(1.05,5.7,0.5,CHART);
-svg+=`<text x="1.05" y="6.55" font-size="0.26" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.03">LOS ANGELES</text>\n`;
-svg+=`<text x="1.05" y="6.78" font-size="0.11" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.18">CALIFORNIA</text>\n`;
+svg+=compass(0.95,5.8,0.42,CHART);
+svg+=`<text x="1.5" y="6.5" font-size="0.2" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.03">LOS ANGELES</text>\n`;
+svg+=`<text x="1.5" y="6.7" font-size="0.095" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.16">CALIFORNIA</text>\n`;
 svg+=`<rect x="0.13" y="0.13" width="${W-0.26}" height="${H-0.26}" fill="none" stroke="${NBC}" stroke-width="0.026"/>\n`;
 svg+=`<rect x="0.19" y="0.19" width="${W-0.38}" height="${H-0.38}" fill="none" stroke="${NBC}" stroke-width="0.01"/>\n`;
 svg+="</svg>\n";
