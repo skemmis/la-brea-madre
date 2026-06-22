@@ -71,7 +71,7 @@ function place(cx,cy_,w,h,avoidFree){const pad=0.03;
 function mkLabel(f,col,scale,weight,avoidFree){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
   const lines=f.properties.name.toUpperCase().split(/\s+/);
   const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.76, h=lines.length*lh;
-  const pos=place(PX(c),PY(c),w,h,avoidFree); if(!pos) return "";
+  let pos=place(PX(c),PY(c),w,h,avoidFree); if(!pos&&avoidFree) pos=place(PX(c),PY(c),w,h,false); if(!pos) return "";
   const ls=(s*0.05).toFixed(3); const first=(-(lines.length-1)/2*lh).toFixed(3);
   let t=`<text x="${pos[0].toFixed(3)}" y="${pos[1].toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
     `font-family="Georgia,'Times New Roman',serif" font-weight="${weight}" text-anchor="middle" letter-spacing="${ls}" dominant-baseline="central">`;
@@ -96,7 +96,11 @@ svg+=layer(free,FREE,0.013,0.9);
 placed.push([0.3,6.45,2.55,8.4]); // reserve compass + cartouche corner
 let labelSvg="";
 for(const f of cy.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,CYC,1.05,"normal",false);
-for(const f of nb.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,NBC,1.0,"bold",true);
+const TOP45=nb.sort((a,b)=>b.properties.area-a.properties.area).slice(0,45);
+let nplaced=0,missed=[];for(const f of TOP45){const r=mkLabel(f,NBC,1.0,"bold",true);if(r)nplaced++;else missed.push(f.properties.name);labelSvg+=r;}
+console.log("neighborhood titles placed:",nplaced,"of 45; missed:",missed.join("|")||"none");
+fs.writeFileSync("physical-pulse/led-neighborhoods.json",JSON.stringify(TOP45.map((f,i)=>({idx:i,name:f.properties.name,lng:f.geometry.coordinates[0],lat:f.geometry.coordinates[1]})),null,1));
+console.log("THE 45:",TOP45.map(f=>f.properties.name).join(", "));
 svg+=labelSvg;
 svg+=compass(0.95,7.15,0.44,CHART);
 svg+=`<text x="1.55" y="7.85" font-size="0.2" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.03">LOS ANGELES</text>\n`;
