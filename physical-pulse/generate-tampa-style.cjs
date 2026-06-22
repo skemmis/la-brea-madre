@@ -1,8 +1,7 @@
 const fs=require("fs"); const G="client/public/geo/";
-// Screenshot frame (≈27×23mi): valley + basin + east LA, ocean only in SW corner
+// Screenshot frame; equal-miles aspect: 27.4mi × 23.5mi -> W/H = 1.169
 const LNG_MIN=-118.60, LNG_MAX=-118.12, LAT_MIN=33.93, LAT_MAX=34.27;
-const W=10, H=7.083; const lngSpan=LNG_MAX-LNG_MIN, latSpan=LAT_MAX-LAT_MIN; // aspect=lng/lat*... keep equal miles
-// equal-miles aspect: lngMiles=27.46, latMiles=23.46 -> W/H=1.170
+const W=10, H=8.55; const lngSpan=LNG_MAX-LNG_MIN, latSpan=LAT_MAX-LAT_MIN;
 const PX=c=>((c[0]-LNG_MIN)/lngSpan*W), PY=c=>((LAT_MAX-c[1])/latSpan*H);
 const inBox=c=>c[0]>=LNG_MIN&&c[0]<=LNG_MAX&&c[1]>=LAT_MIN&&c[1]<=LAT_MAX;
 function clip(a,b){let t0=0,t1=1;const dx=b[0]-a[0],dy=b[1]-a[1];
@@ -25,10 +24,10 @@ const linesOf=(feats,filt)=>{const o=[];for(const f of feats){if(filt&&!filt(f))
   for(const ring of parts) for(const pl of polylines(ring)) o.push(pl);}return o;};
 function fillPath(feats){let d="";for(const f of feats){for(const ring of f.geometry.coordinates){
   d+="M"+ring.map(c=>PX(c).toFixed(3)+","+PY(c).toFixed(3)).join("L")+"Z";}}return d;}
-// ── OSM roads (complete coverage), weighted by class ──
 const osm=JSON.parse(fs.readFileSync("physical-pulse/data/osm-roads-box.json","utf8"));
 const free=[],major=[],minor=[];
-for(const w of osm){const t=w.h; if(t==="motorway_link"||t==="trunk_link")continue; const dst=(t==="motorway"||t==="trunk")?free:(t==="primary"||t==="secondary")?major:minor;
+for(const w of osm){const t=w.h; if(t==="motorway_link"||t==="trunk_link")continue;
+  const dst=(t==="motorway"||t==="trunk")?free:(t==="primary"||t==="secondary")?major:minor;
   for(const pl of polylines(w.c)) dst.push(pl);}
 const land=load("socal-land.geojson");
 const rings=[]; for(const f of land) for(const r of f.geometry.coordinates) rings.push(r);
@@ -47,25 +46,37 @@ for(const f of coastFeats){const co=f.geometry.coordinates;const m=Math.floor(co
     for(const pl of polylines(offset(co,sign,d))) bathy.push(pl);}
 const coast=linesOf(coastFeats);
 const terrain=linesOf(load("socal-contours.geojson"));
-// ── labels with greedy collision avoidance ──
 const nb=load("la-neighborhood-labels.geojson").filter(f=>inBox(f.geometry.coordinates));
 const cy=load("la-city-labels.geojson").filter(f=>inBox(f.geometry.coordinates));
 const ar=nb.map(f=>f.properties.area).sort((a,b)=>a-b);
 const amin=Math.sqrt(ar[0]||1e-4),amax=Math.sqrt(ar[ar.length-1]||1e-3);
-const fsize=a=>{const t=(Math.sqrt(a)-amin)/((amax-amin)||1);return Math.max(0.043,Math.min(0.135,0.043+t*0.092));};
-const placed=[]; // bboxes [x0,y0,x1,y1]
-const M=0.27;
-function tryPlace(cx,cy_,s,len){const w=len*s*0.72, h=s*0.95; const pad=0.012;
-  cx=Math.min(Math.max(cx, M+w/2), W-M-w/2); cy_=Math.min(Math.max(cy_, M+h/2), H-M-h/2);
-  const bb=[cx-w/2-pad,cy_-h/2-pad,cx+w/2+pad,cy_+h/2+pad];
-  for(const p of placed){ if(!(bb[2]<p[0]||bb[0]>p[2]||bb[3]<p[1]||bb[1]>p[3])) return null; }
-  placed.push(bb); return [cx,cy_];}
-function mkLabel(f,col,scale,weight){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
-  const name=f.properties.name.toUpperCase();
-  const pos=tryPlace(PX(c),PY(c),s,name.length); if(!pos) return "";
-  return `<text x="${pos[0].toFixed(3)}" y="${pos[1].toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
-    `font-family="Georgia,'Times New Roman',serif" font-weight="${weight}" text-anchor="middle" `+
-    `letter-spacing="${(s*0.06).toFixed(3)}" dominant-baseline="middle">${name}</text>\n`;}
+const fsize=a=>{const t=(Math.sqrt(a)-amin)/((amax-amin)||1);return Math.max(0.05,Math.min(0.145,0.05+t*0.095));};
+// ── label placement: dodges other labels AND freeways, nudged organically ──
+const freeSegs=[]; for(const pl of free){for(let i=0;i<pl.length-1;i++)freeSegs.push([PX(pl[i]),PY(pl[i]),PX(pl[i+1]),PY(pl[i+1])]);}
+function segInRect(x0,y0,x1,y1,a0,b0,a1,b1){let t0=0,t1=1;const dx=x1-x0,dy=y1-y0;
+  const p=[-dx,dx,-dy,dy],q=[x0-a0,a1-x0,y0-b0,b1-y0];
+  for(let i=0;i<4;i++){if(p[i]===0){if(q[i]<0)return false;}else{const r=q[i]/p[i];
+    if(p[i]<0){if(r>t1)return false;if(r>t0)t0=r;}else{if(r<t0)return false;if(r<t1)t1=r;}}}return true;}
+function hitsFree(bb){for(const s of freeSegs){if(segInRect(s[0],s[1],s[2],s[3],bb[0],bb[1],bb[2],bb[3]))return true;}return false;}
+const placed=[]; const M=0.27;
+function boxFree(bb){for(const p of placed){if(!(bb[2]<p[0]||bb[0]>p[2]||bb[3]<p[1]||bb[1]>p[3]))return false;}return true;}
+function place(cx,cy_,w,h,avoidFree){const pad=0.012;
+  const cands=[[0,0],[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1],[0,-1.9],[0,1.9],[-1.9,0],[1.9,0],[-1.9,-1],[1.9,1]];
+  const sx=Math.max(0.11,w*0.5+0.04), sy=Math.max(0.1,h*0.6+0.03);
+  for(const[ox,oy]of cands){let x=cx+ox*sx,y=cy_+oy*sy;
+    x=Math.min(Math.max(x,M+w/2),W-M-w/2); y=Math.min(Math.max(y,M+h/2),H-M-h/2);
+    const bb=[x-w/2-pad,y-h/2-pad,x+w/2+pad,y+h/2+pad];
+    if(boxFree(bb)&&(!avoidFree||!hitsFree(bb))){placed.push(bb);return[x,y];}}
+  return null;}
+function mkLabel(f,col,scale,weight,avoidFree){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
+  const lines=f.properties.name.toUpperCase().split(/\s+/);
+  const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.72, h=lines.length*lh;
+  const pos=place(PX(c),PY(c),w,h,avoidFree); if(!pos) return "";
+  const ls=(s*0.05).toFixed(3); const first=(-(lines.length-1)/2*lh).toFixed(3);
+  let t=`<text x="${pos[0].toFixed(3)}" y="${pos[1].toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
+    `font-family="Georgia,'Times New Roman',serif" font-weight="${weight}" text-anchor="middle" letter-spacing="${ls}" dominant-baseline="central">`;
+  lines.forEach((l,i)=>{t+=`<tspan x="${pos[0].toFixed(3)}" dy="${i===0?first:lh.toFixed(3)}">${l}</tspan>`;});
+  return t+"</text>\n";}
 const layer=(pls,col,sw,op=1)=>`<g stroke="${col}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"><path d="${linePath(pls)}"/></g>\n`;
 function compass(x,y,r,col){let s=`<g>`;for(let i=0;i<8;i++){const a=i*Math.PI/4,lr=(i%2?r*0.4:r);
   const x2=x+Math.sin(a)*lr,y2=y-Math.cos(a)*lr,w2=i%2?0.03:0.05;
@@ -82,17 +93,16 @@ svg+=layer(terrain,CONT,0.004,0.85);
 svg+=layer(minor,MIN,0.0035,0.7);
 svg+=layer(major,MAJ,0.006,0.85);
 svg+=layer(free,FREE,0.013,0.9);
-// place cities first (priority), then neighborhoods by area desc
-placed.push([0.3,4.95,2.5,6.9]); // reserve compass + cartouche corner
+placed.push([0.3,6.45,2.55,8.4]); // reserve compass + cartouche corner
 let labelSvg="";
-for(const f of cy.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,CYC,1.05,"normal");
-for(const f of nb.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,NBC,1.0,"bold");
+for(const f of cy.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,CYC,1.05,"normal",false);
+for(const f of nb.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,NBC,1.0,"bold",true);
 svg+=labelSvg;
-svg+=compass(0.95,5.8,0.42,CHART);
-svg+=`<text x="1.5" y="6.5" font-size="0.2" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.03">LOS ANGELES</text>\n`;
-svg+=`<text x="1.5" y="6.7" font-size="0.095" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.16">CALIFORNIA</text>\n`;
+svg+=compass(0.95,7.15,0.44,CHART);
+svg+=`<text x="1.55" y="7.85" font-size="0.2" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.03">LOS ANGELES</text>\n`;
+svg+=`<text x="1.55" y="8.06" font-size="0.095" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.16">CALIFORNIA</text>\n`;
 svg+=`<rect x="0.13" y="0.13" width="${W-0.26}" height="${H-0.26}" fill="none" stroke="${NBC}" stroke-width="0.026"/>\n`;
 svg+=`<rect x="0.19" y="0.19" width="${W-0.38}" height="${H-0.38}" fill="none" stroke="${NBC}" stroke-width="0.01"/>\n`;
 svg+="</svg>\n";
 fs.writeFileSync("physical-pulse/pulse-map-tampa-style.svg",svg);
-console.log("roads free/major/minor:",free.length,major.length,minor.length,"| labels placed:",placed.length,"of",nb.length+cy.length,"| bytes:",fs.statSync("physical-pulse/pulse-map-tampa-style.svg").size);
+console.log("labels placed:",placed.length-1,"of",nb.length+cy.length,"| multiline+freeway-dodge | bytes:",fs.statSync("physical-pulse/pulse-map-tampa-style.svg").size);
