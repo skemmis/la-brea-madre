@@ -28,7 +28,7 @@ function fillPath(feats){let d="";for(const f of feats){for(const ring of f.geom
 // ── OSM roads (complete coverage), weighted by class ──
 const osm=JSON.parse(fs.readFileSync("physical-pulse/data/osm-roads-box.json","utf8"));
 const free=[],major=[],minor=[];
-for(const w of osm){const t=w.h; const dst=(t==="motorway"||t==="trunk"||t==="motorway_link"||t==="trunk_link")?free:(t==="primary"||t==="secondary")?major:minor;
+for(const w of osm){const t=w.h; if(t==="motorway_link"||t==="trunk_link")continue; const dst=(t==="motorway"||t==="trunk")?free:(t==="primary"||t==="secondary")?major:minor;
   for(const pl of polylines(w.c)) dst.push(pl);}
 const land=load("socal-land.geojson");
 const rings=[]; for(const f of land) for(const r of f.geometry.coordinates) rings.push(r);
@@ -54,7 +54,7 @@ const ar=nb.map(f=>f.properties.area).sort((a,b)=>a-b);
 const amin=Math.sqrt(ar[0]||1e-4),amax=Math.sqrt(ar[ar.length-1]||1e-3);
 const fsize=a=>{const t=(Math.sqrt(a)-amin)/((amax-amin)||1);return Math.max(0.052,Math.min(0.14,0.052+t*0.088));};
 const placed=[]; // bboxes [x0,y0,x1,y1]
-function tryPlace(cx,cy_,s,len){const w=len*s*0.60, h=s; const pad=0.015;
+function tryPlace(cx,cy_,s,len){const w=len*s*0.60, h=s; const pad=0.045;
   const bb=[cx-w/2-pad,cy_-h/2-pad,cx+w/2+pad,cy_+h/2+pad];
   for(const p of placed){ if(!(bb[2]<p[0]||bb[0]>p[2]||bb[3]<p[1]||bb[1]>p[3])) return null; }
   placed.push(bb); return true;}
@@ -83,7 +83,7 @@ svg+=layer(free,FREE,0.013,0.9);
 // place cities first (priority), then neighborhoods by area desc
 let labelSvg="";
 for(const f of cy.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,CYC,1.05,"normal");
-for(const f of nb.sort((a,b)=>b.properties.area-a.properties.area)) labelSvg+=mkLabel(f,NBC,1.0,"bold");
+for(const f of nb.sort((a,b)=>b.properties.area-a.properties.area).slice(0,32)) labelSvg+=mkLabel(f,NBC,1.0,"bold");
 svg+=labelSvg;
 svg+=compass(1.05,5.7,0.5,CHART);
 svg+=`<text x="1.05" y="6.55" font-size="0.26" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.03">LOS ANGELES</text>\n`;
