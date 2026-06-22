@@ -60,7 +60,7 @@ function segInRect(x0,y0,x1,y1,a0,b0,a1,b1){let t0=0,t1=1;const dx=x1-x0,dy=y1-y
 function hitsFree(bb){for(const s of freeSegs){if(segInRect(s[0],s[1],s[2],s[3],bb[0],bb[1],bb[2],bb[3]))return true;}return false;}
 const placed=[]; const M=0.27;
 function boxFree(bb){for(const p of placed){if(!(bb[2]<p[0]||bb[0]>p[2]||bb[3]<p[1]||bb[1]>p[3]))return false;}return true;}
-function place(cx,cy_,w,h,avoidFree){const pad=0.012;
+function place(cx,cy_,w,h,avoidFree){const pad=0.03;
   const cands=[[0,0],[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1],[0,-1.9],[0,1.9],[-1.9,0],[1.9,0],[-1.9,-1],[1.9,1]];
   const sx=Math.max(0.11,w*0.5+0.04), sy=Math.max(0.1,h*0.6+0.03);
   for(const[ox,oy]of cands){let x=cx+ox*sx,y=cy_+oy*sy;
@@ -70,7 +70,7 @@ function place(cx,cy_,w,h,avoidFree){const pad=0.012;
   return null;}
 function mkLabel(f,col,scale,weight,avoidFree){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
   const lines=f.properties.name.toUpperCase().split(/\s+/);
-  const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.72, h=lines.length*lh;
+  const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.76, h=lines.length*lh;
   const pos=place(PX(c),PY(c),w,h,avoidFree); if(!pos) return "";
   const ls=(s*0.05).toFixed(3); const first=(-(lines.length-1)/2*lh).toFixed(3);
   let t=`<text x="${pos[0].toFixed(3)}" y="${pos[1].toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
