@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="190mm" height="62mm" viewBox="0 0 190 62">
+<rect width="190" height="62" fill="#ffffff"/>
+<text x="14" y="9" font-size="5" fill="#111111" font-family="Arial,Helvetica,sans-serif" font-weight="bold">LED HOLE FIT TEST</text>
+<text x="14" y="16" font-size="3.2" fill="#111111" font-family="Arial,Helvetica,sans-serif">Cut in your real face-layer material. Push a node into each. Best = snug, holds without forcing.</text>
+<circle cx="20" cy="34" r="5.750" fill="none" stroke="#1133cc" stroke-width="0.12"/>
+<text x="20" y="49" font-size="4.4" fill="#111111" font-family="Arial,Helvetica,sans-serif" text-anchor="middle">11.50</text>
+<circle cx="45" cy="34" r="5.875" fill="none" stroke="#1133cc" stroke-width="0.12"/>
+<text x="45" y="49" font-size="4.4" fill="#111111" font-family="Arial,Helvetica,sans-serif" text-anchor="middle">11.75</text>
+<circle cx="70" cy="34" r="6.000" fill="none" stroke="#1133cc" stroke-width="0.12"/>
+<text x="70" y="49" font-size="4.4" fill="#111111" font-family="Arial,Helvetica,sans-serif" text-anchor="middle">12.00</text>
+<circle cx="95" cy="34" r="6.125" fill="none" stroke="#1133cc" stroke-width="0.12"/>
+<text x="95" y="49" font-size="4.4" fill="#111111" font-family="Arial,Helvetica,sans-serif" text-anchor="middle">12.25</text>
+<circle cx="120" cy="34" r="6.250" fill="none" stroke="#1133cc" stroke-width="0.12"/>
+<text x="120" y="49" font-size="4.4" fill="#111111" font-family="Arial,Helvetica,sans-serif" text-anchor="middle">12.50</text>
+<circle cx="145" cy="34" r="6.375" fill="none" stroke="#1133cc" stroke-width="0.12"/>
+<text x="145" y="49" font-size="4.4" fill="#111111" font-family="Arial,Helvetica,sans-serif" text-anchor="middle">12.75</text>
+<circle cx="170" cy="34" r="6.500" fill="none" stroke="#1133cc" stroke-width="0.12"/>
+<text x="170" y="49" font-size="4.4" fill="#111111" font-family="Arial,Helvetica,sans-serif" text-anchor="middle">13.00</text>
+<text x="14" y="58" font-size="3" fill="#111111" font-family="Arial,Helvetica,sans-serif">Numbers are the DRAWN diameter in mm — tell me the winner and I set the map holes to match.</text>
+</svg>
