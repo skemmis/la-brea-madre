@@ -1,7 +1,7 @@
 const fs=require("fs"); const G="client/public/geo/";
 // Screenshot frame; equal-miles aspect: 27.4mi × 23.5mi -> W/H = 1.169
 const LNG_MIN=-118.60, LNG_MAX=-118.12, LAT_MIN=33.93, LAT_MAX=34.27;
-const W=10, H=8.55; const lngSpan=LNG_MAX-LNG_MIN, latSpan=LAT_MAX-LAT_MIN;
+const W=11.7, H=10.0; const lngSpan=LNG_MAX-LNG_MIN, latSpan=LAT_MAX-LAT_MIN;
 const PX=c=>((c[0]-LNG_MIN)/lngSpan*W), PY=c=>((LAT_MAX-c[1])/latSpan*H);
 const inBox=c=>c[0]>=LNG_MIN&&c[0]<=LNG_MAX&&c[1]>=LAT_MIN&&c[1]<=LAT_MAX;
 function clip(a,b){let t0=0,t1=1;const dx=b[0]-a[0],dy=b[1]-a[1];
@@ -60,20 +60,24 @@ function segInRect(x0,y0,x1,y1,a0,b0,a1,b1){let t0=0,t1=1;const dx=x1-x0,dy=y1-y
 function hitsFree(bb){for(const s of freeSegs){if(segInRect(s[0],s[1],s[2],s[3],bb[0],bb[1],bb[2],bb[3]))return true;}return false;}
 const placed=[]; const M=0.27;
 function boxFree(bb){for(const p of placed){if(!(bb[2]<p[0]||bb[0]>p[2]||bb[3]<p[1]||bb[1]>p[3]))return false;}return true;}
-function place(cx,cy_,w,h,avoidFree){const pad=0.03;
-  const cands=[[0,0],[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1],[0,-1.9],[0,1.9],[-1.9,0],[1.9,0],[-1.9,-1],[1.9,1]];
+function place(cx,cy_,w,h,avoidFree){const pad=0.02;
+  const cands=[[0,0]]; for(const rr of [1,1.5,2,2.6,3.2,4,4.8]) for(let k=0;k<8;k++){const a=k*Math.PI/4+(rr%2?0:0.39); cands.push([Math.cos(a)*rr,Math.sin(a)*rr]);}
   const sx=Math.max(0.11,w*0.5+0.04), sy=Math.max(0.1,h*0.6+0.03);
   for(const[ox,oy]of cands){let x=cx+ox*sx,y=cy_+oy*sy;
     x=Math.min(Math.max(x,M+w/2),W-M-w/2); y=Math.min(Math.max(y,M+h/2),H-M-h/2);
     const bb=[x-w/2-pad,y-h/2-pad,x+w/2+pad,y+h/2+pad];
     if(boxFree(bb)&&(!avoidFree||!hitsFree(bb))){placed.push(bb);return[x,y];}}
   return null;}
+const HOLE_D=11.75/25.4, HOLE_R=HOLE_D/2, HOLE_GAP=0.03; const holes=[]; // 11.75mm pixel hole, stacked below each title
 function mkLabel(f,col,scale,weight,avoidFree){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
   const lines=f.properties.name.toUpperCase().split(/\s+/);
   const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.76, h=lines.length*lh;
-  let pos=place(PX(c),PY(c),w,h,avoidFree); if(!pos&&avoidFree) pos=place(PX(c),PY(c),w,h,false); if(!pos) return "";
+  const uW=Math.max(w,HOLE_D), uH=h+HOLE_GAP+HOLE_D;          // title + hole stack
+  let pos=place(PX(c),PY(c),uW,uH,avoidFree); if(!pos&&avoidFree) pos=place(PX(c),PY(c),uW,uH,false); if(!pos) return "";
+  const top=pos[1]-uH/2, labelY=top+h/2, holeY=top+h+HOLE_GAP+HOLE_R;
+  holes.push({x:pos[0],y:holeY,name:f.properties.name});
   const ls=(s*0.05).toFixed(3); const first=(-(lines.length-1)/2*lh).toFixed(3);
-  let t=`<text x="${pos[0].toFixed(3)}" y="${pos[1].toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
+  let t=`<text x="${pos[0].toFixed(3)}" y="${labelY.toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
     `font-family="Georgia,'Times New Roman',serif" font-weight="${weight}" text-anchor="middle" letter-spacing="${ls}" dominant-baseline="central">`;
   lines.forEach((l,i)=>{t+=`<tspan x="${pos[0].toFixed(3)}" dy="${i===0?first:lh.toFixed(3)}">${l}</tspan>`;});
   return t+"</text>\n";}
@@ -93,7 +97,7 @@ svg+=layer(terrain,CONT,0.004,0.85);
 svg+=layer(minor,MIN,0.0035,0.7);
 svg+=layer(major,MAJ,0.006,0.85);
 svg+=layer(free,FREE,0.013,0.9);
-placed.push([0.3,6.45,2.55,8.4]); // reserve compass + cartouche corner
+placed.push([0.3,H-2.6,2.8,H-0.2]); // reserve compass + cartouche corner
 let labelSvg="";
 // surrounding-city labels (Glendale, Beverly Hills, etc.) removed — City of LA only
 // Curated 45: a mix of highly-ticketed hotspots and well-known names, spread across regions
@@ -101,12 +105,13 @@ const SELECTED=new Set(["DOWNTOWN","KOREATOWN","WESTLAKE","MID-WILSHIRE","HOLLYW
 const TOP45=nb.filter(f=>SELECTED.has(f.properties.name.toUpperCase())).sort((a,b)=>b.properties.area-a.properties.area);
 let nplaced=0,missed=[];for(const f of TOP45){const r=mkLabel(f,NBC,1.0,"bold",true);if(r)nplaced++;else missed.push(f.properties.name);labelSvg+=r;}
 console.log("neighborhood titles placed:",nplaced,"of 45; missed:",missed.join("|")||"none");
-fs.writeFileSync("physical-pulse/led-neighborhoods.json",JSON.stringify(TOP45.map((f,i)=>({idx:i,name:f.properties.name,lng:f.geometry.coordinates[0],lat:f.geometry.coordinates[1]})),null,1));
+fs.writeFileSync("physical-pulse/led-neighborhoods.json",JSON.stringify(holes.map((hh,i)=>{const f=TOP45.find(t=>t.properties.name===hh.name);return{idx:i,name:hh.name,lng:f.geometry.coordinates[0],lat:f.geometry.coordinates[1],holeX_in:+hh.x.toFixed(3),holeY_in:+hh.y.toFixed(3)};}),null,1));
 console.log("THE 45:",TOP45.map(f=>f.properties.name).join(", "));
 svg+=labelSvg;
-svg+=compass(0.95,7.15,0.44,CHART);
-svg+=`<text x="1.55" y="7.85" font-size="0.2" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.03">LOS ANGELES</text>\n`;
-svg+=`<text x="1.55" y="8.06" font-size="0.095" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.16">CALIFORNIA</text>\n`;
+for(const hh of holes) svg+=`<circle cx="${hh.x.toFixed(3)}" cy="${hh.y.toFixed(3)}" r="${HOLE_R.toFixed(3)}" fill="none" stroke="#d11d1d" stroke-width="0.02"/>\n`;
+svg+=compass(1.05,H-1.55,0.5,CHART);
+svg+=`<text x="1.65" y="${(H-0.8).toFixed(2)}" font-size="0.2" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.03">LOS ANGELES</text>\n`;
+svg+=`<text x="1.65" y="${(H-0.58).toFixed(2)}" font-size="0.095" fill="${CHART}" text-anchor="middle" font-family="Georgia,serif" letter-spacing="0.16">CALIFORNIA</text>\n`;
 svg+=`<rect x="0.13" y="0.13" width="${W-0.26}" height="${H-0.26}" fill="none" stroke="${NBC}" stroke-width="0.026"/>\n`;
 svg+=`<rect x="0.19" y="0.19" width="${W-0.38}" height="${H-0.38}" fill="none" stroke="${NBC}" stroke-width="0.01"/>\n`;
 svg+="</svg>\n";

@@ -3,270 +3,360 @@
   "idx": 0,
   "name": "BRENTWOOD",
   "lng": -118.48482,
-  "lat": 34.0701
+  "lat": 34.0701,
+  "holeX_in": 2.808,
+  "holeY_in": 6.36
  },
  {
   "idx": 1,
   "name": "WESTCHESTER",
   "lng": -118.38792,
-  "lat": 33.95834
+  "lat": 33.95834,
+  "holeX_in": 6.471,
+  "holeY_in": 9.238
  },
  {
   "idx": 2,
   "name": "ENCINO",
   "lng": -118.50642,
-  "lat": 34.15336
+  "lat": 34.15336,
+  "holeX_in": 2.281,
+  "holeY_in": 3.499
  },
  {
   "idx": 3,
   "name": "SHERMAN OAKS",
   "lng": -118.43405,
-  "lat": 34.14627
+  "lat": 34.14627,
+  "holeX_in": 4.269,
+  "holeY_in": 4.081
  },
  {
   "idx": 4,
   "name": "VAN NUYS",
   "lng": -118.46512,
-  "lat": 34.19741
+  "lat": 34.19741,
+  "holeX_in": 3.559,
+  "holeY_in": 2.256
  },
  {
   "idx": 5,
   "name": "HOLLYWOOD HILLS",
   "lng": -118.34108,
-  "lat": 34.12871
+  "lat": 34.12871,
+  "holeX_in": 6.571,
+  "holeY_in": 3.955
  },
  {
   "idx": 6,
   "name": "BOYLE HEIGHTS",
   "lng": -118.20175,
-  "lat": 34.03293
+  "lat": 34.03293,
+  "holeX_in": 9.929,
+  "holeY_in": 7.894
  },
  {
   "idx": 7,
   "name": "STUDIO CITY",
   "lng": -118.39169,
-  "lat": 34.13782
+  "lat": 34.13782,
+  "holeX_in": 5.078,
+  "holeY_in": 3.997
  },
  {
   "idx": 8,
   "name": "NORTH HOLLYWOOD",
   "lng": -118.37751,
-  "lat": 34.17649
+  "lat": 34.17649,
+  "holeX_in": 5.772,
+  "holeY_in": 2.857
  },
  {
   "idx": 9,
   "name": "RESEDA",
   "lng": -118.54042,
-  "lat": 34.2039
+  "lat": 34.2039,
+  "holeX_in": 1.452,
+  "holeY_in": 2.005
  },
  {
   "idx": 10,
   "name": "DOWNTOWN",
   "lng": -118.24549,
-  "lat": 34.03537
+  "lat": 34.03537,
+  "holeX_in": 8.883,
+  "holeY_in": 7.664
  },
  {
   "idx": 11,
   "name": "CANOGA PARK",
   "lng": -118.59991,
-  "lat": 34.21407
+  "lat": 34.21407,
+  "holeX_in": 0.501,
+  "holeY_in": 1.744
  },
  {
   "idx": 12,
   "name": "EAGLE ROCK",
   "lng": -118.20552,
-  "lat": 34.13854
+  "lat": 34.13854,
+  "holeX_in": 9.807,
+  "holeY_in": 4.266
  },
  {
   "idx": 13,
   "name": "EL SERENO",
   "lng": -118.17026,
-  "lat": 34.07956
+  "lat": 34.07956,
+  "holeX_in": 10.204,
+  "holeY_in": 5.699
  },
  {
   "idx": 14,
   "name": "WESTWOOD",
   "lng": -118.43938,
-  "lat": 34.06848
+  "lat": 34.06848,
+  "holeX_in": 3.915,
+  "holeY_in": 5.982
  },
  {
   "idx": 15,
   "name": "PANORAMA CITY",
   "lng": -118.44693,
-  "lat": 34.22491
+  "lat": 34.22491,
+  "holeX_in": 3.731,
+  "holeY_in": 1.421
  },
  {
   "idx": 16,
   "name": "HOLLYWOOD",
   "lng": -118.33412,
-  "lat": 34.09484
+  "lat": 34.09484,
+  "holeX_in": 6.696,
+  "holeY_in": 5.47
  },
  {
   "idx": 17,
   "name": "MID-CITY",
   "lng": -118.36595,
-  "lat": 34.03992
+  "lat": 34.03992,
+  "holeX_in": 5.511,
+  "holeY_in": 6.558
  },
  {
   "idx": 18,
   "name": "HIGHLAND PARK",
   "lng": -118.18435,
-  "lat": 34.1188
+  "lat": 34.1188,
+  "holeX_in": 10.131,
+  "holeY_in": 3.198
  },
  {
   "idx": 19,
   "name": "VENICE",
   "lng": -118.4633,
-  "lat": 33.98856
+  "lat": 33.98856,
+  "holeX_in": 3.332,
+  "holeY_in": 8.703
  },
  {
   "idx": 20,
   "name": "MAR VISTA",
   "lng": -118.4328,
-  "lat": 34.00589
+  "lat": 34.00589,
+  "holeX_in": 3.663,
+  "holeY_in": 9.394
  },
  {
   "idx": 21,
   "name": "BALDWIN HILLS/CRENSHAW",
   "lng": -118.3584,
-  "lat": 34.01079
+  "lat": 34.01079,
+  "holeX_in": 5.889,
+  "holeY_in": 7.714
  },
  {
   "idx": 22,
   "name": "FLORENCE",
   "lng": -118.26453,
-  "lat": 33.97539
+  "lat": 33.97539,
+  "holeX_in": 8.177,
+  "holeY_in": 8.717
  },
  {
   "idx": 23,
   "name": "MID-WILSHIRE",
   "lng": -118.34655,
-  "lat": 34.05833
+  "lat": 34.05833,
+  "holeX_in": 6.178,
+  "holeY_in": 6.278
  },
  {
   "idx": 24,
   "name": "SILVER LAKE",
   "lng": -118.27011,
-  "lat": 34.09449
+  "lat": 34.09449,
+  "holeX_in": 8.041,
+  "holeY_in": 5.251
  },
  {
   "idx": 25,
   "name": "WESTLAKE",
   "lng": -118.27376,
-  "lat": 34.06185
+  "lat": 34.06185,
+  "holeX_in": 7.681,
+  "holeY_in": 6.174
  },
  {
   "idx": 26,
   "name": "KOREATOWN",
   "lng": -118.30228,
-  "lat": 34.06482
+  "lat": 34.06482,
+  "holeX_in": 7.054,
+  "holeY_in": 6.348
  },
  {
   "idx": 27,
   "name": "SAWTELLE",
   "lng": -118.45002,
-  "lat": 34.03703
+  "lat": 34.03703,
+  "holeX_in": 3.865,
+  "holeY_in": 7.586
  },
  {
   "idx": 28,
   "name": "LOS FELIZ",
   "lng": -118.28752,
-  "lat": 34.1065
+  "lat": 34.1065,
+  "holeX_in": 7.345,
+  "holeY_in": 4.897
  },
  {
   "idx": 29,
   "name": "HISTORIC SOUTH-CENTRAL",
   "lng": -118.26511,
-  "lat": 34.01768
+  "lat": 34.01768,
+  "holeX_in": 7.148,
+  "holeY_in": 7.509
  },
  {
   "idx": 30,
   "name": "LINCOLN HEIGHTS",
   "lng": -118.20947,
-  "lat": 34.07524
+  "lat": 34.07524,
+  "holeX_in": 9.519,
+  "holeY_in": 5.815
  },
  {
   "idx": 31,
   "name": "ECHO PARK",
   "lng": -118.25596,
-  "lat": 34.07928
+  "lat": 34.07928,
+  "holeX_in": 8.657,
+  "holeY_in": 5.696
  },
  {
   "idx": 32,
   "name": "EAST HOLLYWOOD",
   "lng": -118.29773,
-  "lat": 34.08732
+  "lat": 34.08732,
+  "holeX_in": 7.368,
+  "holeY_in": 4.144
  },
  {
   "idx": 33,
   "name": "WATTS",
   "lng": -118.23835,
-  "lat": 33.94187
+  "lat": 33.94187,
+  "holeX_in": 8.815,
+  "holeY_in": 9.499
  },
  {
   "idx": 34,
   "name": "EXPOSITION PARK",
   "lng": -118.29977,
-  "lat": 34.01829
+  "lat": 34.01829,
+  "holeX_in": 7.099,
+  "holeY_in": 8.235
  },
  {
   "idx": 35,
   "name": "ATWATER VILLAGE",
   "lng": -118.26523,
-  "lat": 34.13047
+  "lat": 34.13047,
+  "holeX_in": 8.431,
+  "holeY_in": 4.185
  },
  {
   "idx": 36,
   "name": "PICO-UNION",
   "lng": -118.28394,
-  "lat": 34.04511
+  "lat": 34.04511,
+  "holeX_in": 8.139,
+  "holeY_in": 8.008
  },
  {
   "idx": 37,
   "name": "BEVERLY GROVE",
   "lng": -118.37532,
-  "lat": 34.07763
+  "lat": 34.07763,
+  "holeX_in": 5.477,
+  "holeY_in": 5.738
  },
  {
   "idx": 38,
   "name": "HANCOCK PARK",
   "lng": -118.33491,
-  "lat": 34.07221
+  "lat": 34.07221,
+  "holeX_in": 5.848,
+  "holeY_in": 4.986
  },
  {
   "idx": 39,
   "name": "SOUTH PARK",
   "lng": -118.26588,
-  "lat": 33.99608
+  "lat": 33.99608,
+  "holeX_in": 8.144,
+  "holeY_in": 9.416
  },
  {
   "idx": 40,
   "name": "FAIRFAX",
   "lng": -118.35294,
-  "lat": 34.07994
+  "lat": 34.07994,
+  "holeX_in": 6.022,
+  "holeY_in": 5.635
  },
  {
   "idx": 41,
   "name": "LEIMERT PARK",
   "lng": -118.32816,
-  "lat": 34.00989
+  "lat": 34.00989,
+  "holeX_in": 6.42,
+  "holeY_in": 8.462
  },
  {
   "idx": 42,
   "name": "WEST LOS ANGELES",
   "lng": -118.43065,
-  "lat": 34.04649
+  "lat": 34.04649,
+  "holeX_in": 4.535,
+  "holeY_in": 6.677
  },
  {
   "idx": 43,
   "name": "PICO-ROBERTSON",
   "lng": -118.39401,
-  "lat": 34.05593
+  "lat": 34.05593,
+  "holeX_in": 4.655,
+  "holeY_in": 5.958
  },
  {
   "idx": 44,
   "name": "CHINATOWN",
   "lng": -118.23729,
-  "lat": 34.06411
+  "lat": 34.06411,
+  "holeX_in": 8.635,
+  "holeY_in": 6.765
  }
 ]
