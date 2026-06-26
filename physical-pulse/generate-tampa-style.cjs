@@ -60,12 +60,14 @@ function segInRect(x0,y0,x1,y1,a0,b0,a1,b1){let t0=0,t1=1;const dx=x1-x0,dy=y1-y
 function hitsFree(bb){for(const s of freeSegs){if(segInRect(s[0],s[1],s[2],s[3],bb[0],bb[1],bb[2],bb[3]))return true;}return false;}
 const placed=[]; const M=0.27;
 function boxFree(bb){for(const p of placed){if(!(bb[2]<p[0]||bb[0]>p[2]||bb[3]<p[1]||bb[1]>p[3]))return false;}return true;}
-function place(cx,cy_,w,h,avoidFree){const pad=0.02;
+function onLandInch(x,y){const lng=LNG_MIN+x/W*lngSpan, lat=LAT_MAX-y/H*latSpan; return inLand([lng,lat]);}
+function place(cx,cy_,w,h,avoidFree,needLand){const pad=0.02;
   const cands=[[0,0]]; for(const rr of [1,1.5,2,2.6,3.2,4,4.8]) for(let k=0;k<8;k++){const a=k*Math.PI/4+(rr%2?0:0.39); cands.push([Math.cos(a)*rr,Math.sin(a)*rr]);}
   const sx=Math.max(0.11,w*0.5+0.04), sy=Math.max(0.1,h*0.6+0.03);
   for(const[ox,oy]of cands){let x=cx+ox*sx,y=cy_+oy*sy;
     x=Math.min(Math.max(x,M+w/2),W-M-w/2); y=Math.min(Math.max(y,M+h/2),H-M-h/2);
     const bb=[x-w/2-pad,y-h/2-pad,x+w/2+pad,y+h/2+pad];
+    if(needLand){const pts=[[x,y],[bb[0],bb[1]],[bb[2],bb[1]],[bb[0],bb[3]],[bb[2],bb[3]]]; if(!pts.every(p=>onLandInch(p[0],p[1]))) continue;}
     if(boxFree(bb)&&(!avoidFree||!hitsFree(bb))){placed.push(bb);return[x,y];}}
   return null;}
 const HOLE_D=11.75/25.4, HOLE_R=HOLE_D/2, HOLE_GAP=0.03; const holes=[]; // 11.75mm pixel hole, stacked below each title
@@ -73,7 +75,7 @@ function mkLabel(f,col,scale,weight,avoidFree){const c=f.geometry.coordinates;co
   const lines=f.properties.name.toUpperCase().split(/\s+/);
   const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.76, h=lines.length*lh;
   const uW=Math.max(w,HOLE_D), uH=h+HOLE_GAP+HOLE_D;          // title + hole stack
-  let pos=place(PX(c),PY(c),uW,uH,avoidFree); if(!pos&&avoidFree) pos=place(PX(c),PY(c),uW,uH,false); if(!pos) return "";
+  let pos=place(PX(c),PY(c),uW,uH,avoidFree,true); if(!pos) pos=place(PX(c),PY(c),uW,uH,false,true); if(!pos) pos=place(PX(c),PY(c),uW,uH,false,false); if(!pos) return "";
   const top=pos[1]-uH/2, labelY=top+h/2, holeY=top+h+HOLE_GAP+HOLE_R;
   holes.push({x:pos[0],y:holeY,name:f.properties.name});
   const ls=(s*0.05).toFixed(3); const first=(-(lines.length-1)/2*lh).toFixed(3);
