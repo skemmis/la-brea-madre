@@ -288,15 +288,19 @@ export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
         maxD: Math.max(1, ...fullD),
         maxC: Math.max(1, ...fullC),
       };
-      // The rush window: the contiguous run of hours around the busiest hour
-      // whose ticket counts stay above half the peak. That's the stretch the
-      // /pulsenow loop plays.
-      let peakH = 0;
-      for (let h = 1; h < 24; h++) if (fullC[h] > fullC[peakH]) peakH = h;
-      const thresh = fullC[peakH] * 0.5;
+      // The loop window. We deliberately stay in the AFTERNOON: mornings skew
+      // almost entirely to street-sweeping and meters (one or two colors —
+      // monotone), while the afternoon carries the full spread of violation
+      // types. So we find the busiest afternoon hour (noon onward) and grow a
+      // window around it — the contiguous run whose counts stay above 40% of
+      // that peak — clamped to the afternoon.
+      const AFT_START = 12, AFT_END = 18; // noon … 6pm
+      let peakH = AFT_START;
+      for (let h = AFT_START; h <= AFT_END; h++) if (fullC[h] > fullC[peakH]) peakH = h;
+      const thresh = fullC[peakH] * 0.4;
       let lo = peakH, hi = peakH;
-      while (lo > 0 && fullC[lo - 1] >= thresh) lo--;
-      while (hi < 23 && fullC[hi + 1] >= thresh) hi++;
+      while (lo > AFT_START && fullC[lo - 1] >= thresh) lo--;
+      while (hi < AFT_END && fullC[hi + 1] >= thresh) hi++;
       peakRef.current = { start: lo * 3600, end: (hi + 1) * 3600 };
       dayRef.current = d;
       setDay(d);
@@ -575,7 +579,7 @@ export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
           MUSIC FOR PARKING
         </div>
         <div className="text-[11px] mt-1.5 opacity-60" style={{ letterSpacing: "0.1em" }}>
-          {isPeak ? "LOS ANGELES PARKING AT RUSH HOUR · ON A LOOP" : "REAL-TIME LOS ANGELES PARKING VIOLATIONS"}
+          {isPeak ? "LOS ANGELES PARKING AT ITS BUSIEST · ON A LOOP" : "REAL-TIME LOS ANGELES PARKING VIOLATIONS"}
         </div>
         {/* The headline figures: how many, how much — since midnight. */}
         <div className="mt-3 flex items-end gap-6">
@@ -779,8 +783,8 @@ export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
             </div>
             <div className="text-[12px] opacity-70 mt-3 leading-relaxed" style={{ letterSpacing: "0.08em" }}>
               {isPeak ? (
-                <>The city's parking citations at their busiest — the morning
-                rush, looping forever. The map keeps a generative score: each
+                <>The city's parking citations at their busiest — the afternoon
+                peak, looping forever. The map keeps a generative score: each
                 ticket a note, the city's busyness the bass.</>
               ) : (
                 <>A day of the city's parking citations, replayed on the hour, on
