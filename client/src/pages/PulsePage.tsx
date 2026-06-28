@@ -32,6 +32,10 @@ interface FeedItem {
 interface Bins { dollars: number[]; count: number[]; maxD: number; maxC: number; nowHour: number }
 
 const BLOOM_MS = 6500; // how long each ticket's bloom lingers, like drying ink
+// How fast /pulsenow replays its afternoon window. 15× turns the ~3-hour window
+// into a ~12-minute loop (~1 ticket/sec), so the real, varied mix reads quickly
+// instead of the sparse red-heavy trickle a 1:1 two-minute glimpse would show.
+const PEAK_RATE = 15;
 
 // Built once, reused every frame — constructing an Intl.DateTimeFormat is
 // expensive enough that doing it 60×/sec was its own source of jank (and, by
@@ -65,6 +69,13 @@ const clock = (secs: number) => {
   const s = Math.floor(secs % 60);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(h)}:${p(m)}:${p(s)}`;
+};
+
+/** A round hour as "12 PM", "3 PM" — for the peak window label. */
+const hourLabel = (secs: number) => {
+  const h = Math.floor(secs / 3600) % 24;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12} ${h < 12 ? "AM" : "PM"}`;
 };
 
 /** First index with events[i].t >= target (binary search; events sorted by t). */
@@ -215,14 +226,16 @@ export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
   const densityRef = useRef(0); // violations/hour, for evening slow-down
   const hoverIdRef = useRef<number | null>(null); // the feed row under the cursor
 
-  // The clock that drives everything. Live mode = LA wall time. Peak mode = a
-  // virtual time that sweeps the rush window and wraps back to its start, in
-  // real time, so the busy stretch plays on a loop.
+  // The clock that drives everything. Live mode = LA wall time, 1:1. Peak mode
+  // = a virtual time that sweeps the afternoon window and wraps to its start —
+  // but COMPRESSED: at 1:1 you only ever glimpse a ~2-minute slice (sparse, and
+  // unrepresentative — a chance red-zone cluster), so we play the ~3-hour window
+  // fast enough that the full, varied, busy mix shows within a minute.
   const nowSeconds = (): number => {
     const pk = peakRef.current;
     if (isPeak && pk) {
       const span = pk.end - pk.start;
-      return pk.start + ((performance.now() / 1000) % span);
+      return pk.start + (((performance.now() / 1000) * PEAK_RATE) % span);
     }
     return laSecondsNow();
   };
@@ -601,7 +614,11 @@ export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
           </div>
         </div>
         <div className="text-[10px] opacity-45 mt-2 tabular-nums" style={{ letterSpacing: "0.18em" }}>
-          {clock(readout.now)} · {isPeak ? "PEAK HOURS" : "SINCE MIDNIGHT"}
+          {isPeak
+            ? peakRef.current
+              ? `${hourLabel(peakRef.current.start)} – ${hourLabel(peakRef.current.end)} · ON A LOOP`
+              : "AFTERNOON PEAK"
+            : `${clock(readout.now)} · SINCE MIDNIGHT`}
         </div>
 
         {/* THE LATEST — an accordion at the foot of the modal */}
