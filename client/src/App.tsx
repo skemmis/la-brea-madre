@@ -33,7 +33,8 @@ export default function App() {
         <Route path="/admin" component={user ? AdminPage : LoginPage} />
         <Route path="/map" component={MapPage} />
         <Route path="/arena" component={ArenaPage} />
-        <Route path="/pulse" component={PulsePage} />
+        <Route path="/pulse">{() => <PulsePage />}</Route>
+        <Route path="/pulsenow">{() => <PulsePage mode="peak" />}</Route>
         <Route path="/market/:id" component={MarketDetailPage} />
         <Route path="/portfolio" component={PortfolioPage} />
         <Route component={MarketPage} />

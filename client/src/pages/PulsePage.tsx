@@ -195,21 +195,41 @@ function Knob({ k, label, min, max, step, onChange }: {
   );
 }
 
-export default function PulsePage() {
+// Two faces of the same piece:
+//   "live" — replays the donor day at 1:1 on the LA clock (quiet at 3am).
+//   "peak" — loops the day's rush window forever, so the map is always busy
+//            (for a kiosk/storefront that can't wait until dawn).
+type PulseMode = "live" | "peak";
+
+export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
+  const isPeak = mode === "peak";
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const dayRef = useRef<PulseDay | null>(null);
   const prefixRef = useRef<{ cumD: number[]; fullD: number[]; fullC: number[]; maxD: number; maxC: number } | null>(null);
+  const peakRef = useRef<{ start: number; end: number } | null>(null); // rush window, seconds
   const audioRef = useRef<PulseAudio | null>(null);
   const feedRef = useRef<FeedItem[]>([]);
   const feedId = useRef(0);
   const densityRef = useRef(0); // violations/hour, for evening slow-down
   const hoverIdRef = useRef<number | null>(null); // the feed row under the cursor
 
+  // The clock that drives everything. Live mode = LA wall time. Peak mode = a
+  // virtual time that sweeps the rush window and wraps back to its start, in
+  // real time, so the busy stretch plays on a loop.
+  const nowSeconds = (): number => {
+    const pk = peakRef.current;
+    if (isPeak && pk) {
+      const span = pk.end - pk.start;
+      return pk.start + ((performance.now() / 1000) % span);
+    }
+    return laSecondsNow();
+  };
+
   const [day, setDay] = useState<PulseDay | null>(null);
   const [, setErr] = useState(false);
-  const [readout, setReadout] = useState({ now: 0, written: 0 });
+  const [readout, setReadout] = useState({ now: 0, written: 0, dollars: 0 });
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [bins, setBins] = useState<Bins | null>(null);
   const [soundOn, setSoundOn] = useState(false);
@@ -268,6 +288,16 @@ export default function PulsePage() {
         maxD: Math.max(1, ...fullD),
         maxC: Math.max(1, ...fullC),
       };
+      // The rush window: the contiguous run of hours around the busiest hour
+      // whose ticket counts stay above half the peak. That's the stretch the
+      // /pulsenow loop plays.
+      let peakH = 0;
+      for (let h = 1; h < 24; h++) if (fullC[h] > fullC[peakH]) peakH = h;
+      const thresh = fullC[peakH] * 0.5;
+      let lo = peakH, hi = peakH;
+      while (lo > 0 && fullC[lo - 1] >= thresh) lo--;
+      while (hi < 23 && fullC[hi + 1] >= thresh) hi++;
+      peakRef.current = { start: lo * 3600, end: (hi + 1) * 3600 };
       dayRef.current = d;
       setDay(d);
       setErr(false);
@@ -357,10 +387,13 @@ export default function PulsePage() {
       const map = mapRef.current;
       if (!data || !map) return;
       const events = data.events;
-      const now = laSecondsNow();
+      const now = nowSeconds();
 
+      // The clock jumped backward: LA midnight (live) or the rush loop wrapping
+      // (peak). Reset the cursor either way; only refetch a fresh donor day at
+      // the real midnight, never on a peak wrap.
       if (cursor === -1 || now < lastNow - 5) {
-        if (cursor !== -1) load();
+        if (cursor !== -1 && !isPeak) load();
         cursor = lowerBound(events, now);
         active = [];
       }
@@ -472,10 +505,14 @@ export default function PulsePage() {
     const tick = () => {
       const pre = prefixRef.current;
       if (!pre) return;
-      const now = laSecondsNow();
+      const now = nowSeconds();
       const idxUpTo = (sec: number) => lowerBound(events, sec);
-      const written = idxUpTo(now + 1);
-      setReadout({ now, written });
+      // Live: tallies run from midnight. Peak: from the rush window's start, so
+      // the figures count "this rush" and reset cleanly each loop.
+      const baseIdx = idxUpTo(isPeak && peakRef.current ? peakRef.current.start : 0);
+      const written = idxUpTo(now + 1) - baseIdx;
+      const dollarsNow = pre.cumD[idxUpTo(now + 1)] - pre.cumD[baseIdx];
+      setReadout({ now, written, dollars: dollarsNow });
 
       const nowHour = Math.floor(now / 3600);
       const dollars: number[] = [];
@@ -522,9 +559,7 @@ export default function PulsePage() {
   };
 
   const families = day?.families ?? [];
-  const dayTotalDollars = prefixRef.current
-    ? prefixRef.current.cumD[lowerBound(day?.events ?? [], readout.now + 1)]
-    : 0;
+  const dayTotalDollars = readout.dollars;
 
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[#ece4d0]">
@@ -540,7 +575,7 @@ export default function PulsePage() {
           MUSIC FOR PARKING
         </div>
         <div className="text-[11px] mt-1.5 opacity-60" style={{ letterSpacing: "0.1em" }}>
-          REAL-TIME LOS ANGELES PARKING VIOLATIONS
+          {isPeak ? "LOS ANGELES PARKING AT RUSH HOUR · ON A LOOP" : "REAL-TIME LOS ANGELES PARKING VIOLATIONS"}
         </div>
         {/* The headline figures: how many, how much — since midnight. */}
         <div className="mt-3 flex items-end gap-6">
@@ -562,7 +597,7 @@ export default function PulsePage() {
           </div>
         </div>
         <div className="text-[10px] opacity-45 mt-2 tabular-nums" style={{ letterSpacing: "0.18em" }}>
-          {clock(readout.now)} · SINCE MIDNIGHT
+          {clock(readout.now)} · {isPeak ? "PEAK HOURS" : "SINCE MIDNIGHT"}
         </div>
 
         {/* THE LATEST — an accordion at the foot of the modal */}
@@ -743,9 +778,15 @@ export default function PulsePage() {
               MUSIC FOR PARKING
             </div>
             <div className="text-[12px] opacity-70 mt-3 leading-relaxed" style={{ letterSpacing: "0.08em" }}>
-              A day of the city's parking citations, replayed on the hour, on
-              Los Angeles time. The map keeps a generative score — each ticket
-              a note, the city's busyness the bass.
+              {isPeak ? (
+                <>The city's parking citations at their busiest — the morning
+                rush, looping forever. The map keeps a generative score: each
+                ticket a note, the city's busyness the bass.</>
+              ) : (
+                <>A day of the city's parking citations, replayed on the hour, on
+                Los Angeles time. The map keeps a generative score — each ticket
+                a note, the city's busyness the bass.</>
+              )}
             </div>
             <button
               onClick={() => {
