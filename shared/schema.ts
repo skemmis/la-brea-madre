@@ -24,6 +24,7 @@ export const users = pgTable("users", {
   crude: integer("crude").notNull().default(50), // starting resources
   totalHexes: integer("total_hexes").notNull().default(0), // cached count
   startHex: text("start_hex"), // first hex claimed (used for initial placement)
+  pulseSeedAt: timestamp("pulse_seed_at"), // when the one-time Pulse winnings were claimed
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastActiveAt: timestamp("last_active_at").notNull().defaultNow(),
 });

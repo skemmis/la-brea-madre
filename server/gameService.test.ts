@@ -128,4 +128,29 @@ suite("gameService (integration)", () => {
     const unowned = map.find((m) => m.h3Index !== CENTER)!;
     assert.equal(unowned.ownerId, null);
   });
+
+  it("pulse seed claims once, caps the grant, and never double-credits", async () => {
+    const u = await makeUser("Em", 0);
+
+    const first = await gs.claimPulseSeed(u.id, 250);
+    assert.equal(first.credited, 250);
+    assert.equal(first.alreadyClaimed, false);
+    assert.equal(first.crude, 250);
+
+    // The cached users column follows the canonical state.
+    const [row] = await db.select().from(schema.users).where(eq(schema.users.id, u.id));
+    assert.equal(row.crude, 250);
+    assert.ok(row.pulseSeedAt, "claim is stamped");
+
+    // A second claim (retry, second tab) credits nothing.
+    const again = await gs.claimPulseSeed(u.id, 999);
+    assert.equal(again.credited, 0);
+    assert.equal(again.alreadyClaimed, true);
+    assert.equal(again.crude, 250);
+
+    // A grinder's oversized bank is capped.
+    const whale = await makeUser("Fi", 0);
+    const capped = await gs.claimPulseSeed(whale.id, 99999);
+    assert.equal(capped.credited, 2500);
+  });
 });

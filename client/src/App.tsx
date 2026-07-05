@@ -8,6 +8,7 @@ import PortfolioPage from "./pages/PortfolioPage";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 import ArenaPage from "./pages/ArenaPage";
+import PulsePage from "./pages/PulsePage";
 
 export default function App() {
   const { user, isLoading } = useAuth();
@@ -32,6 +33,11 @@ export default function App() {
         <Route path="/admin" component={user ? AdminPage : LoginPage} />
         <Route path="/map" component={MapPage} />
         <Route path="/arena" component={ArenaPage} />
+        {/* The pulse map is the front door; THE FLOOR waits under its corner. */}
+        <Route path="/">{() => <PulsePage key="live" />}</Route>
+        <Route path="/pulse">{() => <PulsePage key="live" />}</Route>
+        <Route path="/pulsenow">{() => <PulsePage key="peak" mode="peak" />}</Route>
+        <Route path="/floor" component={MarketPage} />
         <Route path="/market/:id" component={MarketDetailPage} />
         <Route path="/portfolio" component={PortfolioPage} />
         <Route component={MarketPage} />

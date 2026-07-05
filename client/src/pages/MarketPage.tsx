@@ -1,8 +1,13 @@
+import { useEffect } from "react";
 import { Link } from "wouter";
+import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
 import { useBoard, type ExchangeMarket } from "../hooks/useExchange";
 import ExchangeMasthead from "../components/ExchangeMasthead";
 import { Spark } from "../components/charts";
+import { apiRequest } from "../lib/queryClient";
+import { loadWallet, saveWallet } from "../lib/pulseWallet";
 
 const cents = (p: number) => `${Math.round(p * 100)}¢`;
 const num = (n: number) => n.toLocaleString("en-US");
@@ -38,6 +43,27 @@ const fullDate = (day: string) =>
 export default function MarketPage() {
   const { user } = useAuth();
   const { data: board, isLoading } = useBoard();
+  const qc = useQueryClient();
+
+  // Pulse winnings walk in the door with you: the first logged-in visit to
+  // the floor converts the local wallet into the real bankroll (once, ever —
+  // the server stamps the claim, so retries and second tabs credit nothing).
+  useEffect(() => {
+    if (!user) return;
+    const w = loadWallet();
+    if (w.claimed || w.bank <= 0) return;
+    apiRequest<{ credited: number; alreadyClaimed: boolean }>("POST", "/api/pulse/claim", {
+      bank: w.bank,
+    })
+      .then((res) => {
+        saveWallet({ ...w, claimed: true });
+        if (res.credited > 0) {
+          qc.invalidateQueries({ queryKey: ["/api/player/me"] });
+          toast.success(`Your pulse winnings cleared — $${res.credited.toLocaleString()} to your bank.`);
+        }
+      })
+      .catch(() => {}); // quietly retry on a future visit
+  }, [user, qc]);
 
   const markets = board?.markets ?? [];
   const byCategory = new Map<string, ExchangeMarket[]>();
