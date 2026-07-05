@@ -12,11 +12,13 @@
  * browsers forbid autoplay.
  */
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { apiRequest } from "../lib/queryClient";
 import { SHEET_STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "../lib/sheetStyle";
 import { PulseAudio, DIALS, eveningSlow, IS_MOBILE } from "../lib/pulseAudio";
+import { loadWallet, saveWallet, type PulseWallet } from "../lib/pulseWallet";
 
 interface Family { key: string; label: string; color: string }
 interface PulseEvent {
@@ -36,6 +38,16 @@ const BLOOM_MS = 6500; // how long each ticket's bloom lingers, like drying ink
 // into a ~12-minute loop (~1 ticket/sec), so the real, varied mix reads quickly
 // instead of the sparse red-heavy trickle a 1:1 two-minute glimpse would show.
 const PEAK_RATE = 15;
+
+// ─── The wager: the game hidden inside the art piece ─────────────────────────
+// Watch the street long enough and it offers you a call — white or black car
+// ticketed next? Win, and the fine is yours. Win enough, and the bottom-right
+// corner of the sheet turns up: there's been another page under this one all
+// along. The winnings persist locally (lib/pulseWallet) and seed the real
+// bankroll on the floor.
+
+const UNLOCK_WINS = 3; // correct calls before the corner turns up
+type Call = "White" | "Black";
 
 // Built once, reused every frame — constructing an Intl.DateTimeFormat is
 // expensive enough that doing it 60×/sec was its own source of jank (and, by
@@ -214,6 +226,8 @@ type PulseMode = "live" | "peak";
 
 export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
   const isPeak = mode === "peak";
+  const hasGame = !isPeak; // the wager rides the real clock only
+  const [, navigate] = useLocation();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -255,6 +269,67 @@ export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
   const [, setTuneVer] = useState(0); // bump to re-render sliders after a change
   const [copied, setCopied] = useState(false);
   const [tip, setTip] = useState<{ item: FeedItem; left: number; top: number } | null>(null);
+
+  // The wager's little world. A returning winner sees the card immediately;
+  // a first-timer earns it by watching a few tickets land.
+  const [wallet, setWallet] = useState<PulseWallet>(loadWallet);
+  const [wagerUp, setWagerUp] = useState(() => hasGame && loadWallet().wins > 0);
+  const [call, setCall] = useState<Call | null>(null);
+  const [passed, setPassed] = useState(0); // other-colored tickets while armed
+  const [lastResult, setLastResult] = useState<{ win: boolean; veh: string; fine: number } | null>(null);
+  const [peeling, setPeeling] = useState(false);
+  const callRef = useRef<Call | null>(null); // the animator reads the live call
+  const spawnsRef = useRef(0); // tickets seen since mount (surfaces the card)
+  const wagerUpRef = useRef(wagerUp);
+  const resolveRef = useRef<(win: boolean, ev: PulseEvent) => void>(() => {});
+  const resultTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fresh closure every render, so resolution always sees current state.
+  resolveRef.current = (win: boolean, ev: PulseEvent) => {
+    setCall(null);
+    setPassed(0);
+    setLastResult({ win, veh: ev.veh ?? "a car", fine: ev.fine });
+    if (resultTimer.current) clearTimeout(resultTimer.current);
+    resultTimer.current = setTimeout(() => setLastResult(null), 5000);
+    if (win) {
+      audioRef.current?.note(1, 400); // a bright shimmer for the win
+      setWallet((w) => {
+        const next = {
+          ...w,
+          bank: w.bank + ev.fine,
+          wins: w.wins + 1,
+          unlocked: w.unlocked || w.wins + 1 >= UNLOCK_WINS,
+        };
+        saveWallet(next);
+        return next;
+      });
+    }
+  };
+
+  const armCall = (c: Call) => {
+    setLastResult(null);
+    setPassed(0);
+    setCall(c);
+    callRef.current = c;
+  };
+
+  const peelToFloor = () => {
+    if (peeling) return;
+    setPeeling(true);
+    setTimeout(() => navigate("/floor"), 430); // let the corner lift first
+  };
+
+  useEffect(() => {
+    wagerUpRef.current = wagerUp;
+  }, [wagerUp]);
+
+  // First-timers: the card surfaces after a few tickets, or after half a
+  // minute of quiet watching — whichever the street offers first.
+  useEffect(() => {
+    if (!hasGame || !day || wagerUp) return;
+    const t = setTimeout(() => setWagerUp(true), 30000);
+    return () => clearTimeout(t);
+  }, [hasGame, day, wagerUp]);
 
   // Place a detail tooltip beside a feed row, clamped to the screen.
   const tipFor = (item: FeedItem, el: HTMLElement | null): { item: FeedItem; left: number; top: number } => {
@@ -428,6 +503,23 @@ export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
           hood: ev.hood, loc: ev.loc, veh: ev.veh, viol: ev.viol,
         });
         audioRef.current?.note(ev.f, ev.fine);
+
+        // The wager watches every ticket land. Cards surface after a few; an
+        // armed call resolves on the first white-or-black vehicle.
+        if (hasGame) {
+          spawnsRef.current++;
+          if (!wagerUpRef.current && spawnsRef.current >= 3) setWagerUp(true);
+          const pk = callRef.current;
+          if (pk && ev.veh) {
+            const color = ev.veh.split(" ")[0];
+            if (color === "White" || color === "Black") {
+              callRef.current = null; // one resolution per call
+              resolveRef.current(color === pk, ev);
+            } else {
+              setPassed((p) => p + 1);
+            }
+          }
+        }
         cursor++;
         spawned = true;
       }
@@ -776,6 +868,108 @@ export default function PulsePage({ mode = "live" }: { mode?: PulseMode }) {
           </div>
         ))}
       </div>
+
+      {/* THE WAGER — the game surfaces once you've watched a few tickets land */}
+      {hasGame && wagerUp && day && (
+        <div
+          className={`plate absolute right-4 px-4 py-3 select-none w-[248px] ${
+            wallet.unlocked ? "bottom-28" : "bottom-16 md:bottom-4"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] opacity-60" style={{ letterSpacing: "0.25em" }}>
+              THE WAGER
+            </span>
+            <span className="flex items-center gap-1">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="inline-block w-1.5 h-1.5 rounded-full"
+                  style={{
+                    background: wallet.wins > i ? "var(--ink)" : "transparent",
+                    border: "1px solid var(--ink-soft)",
+                  }}
+                />
+              ))}
+            </span>
+          </div>
+
+          {lastResult && (
+            <div
+              className="mt-2 text-[11px] font-bold"
+              style={{ color: lastResult.win ? "#3c6e50" : "#a6543c", letterSpacing: "0.04em" }}
+            >
+              {lastResult.win
+                ? `${lastResult.veh.toUpperCase()} — YOU WIN $${lastResult.fine}`
+                : `${lastResult.veh.toUpperCase()} — THE HOUSE KEEPS IT`}
+            </div>
+          )}
+
+          {call === null ? (
+            <>
+              <div className="text-[11px] mt-2 opacity-80" style={{ letterSpacing: "0.06em" }}>
+                Which is ticketed next?
+              </div>
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={() => armCall("White")}
+                  className="btn-ink flex-1 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1.5"
+                >
+                  <span className="inline-block w-2.5 h-2.5 rounded-full border border-[var(--ink-strong)]" style={{ background: "#f4efe2" }} />
+                  WHITE
+                </button>
+                <button
+                  onClick={() => armCall("Black")}
+                  className="btn-ink flex-1 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1.5"
+                >
+                  <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#241f1a" }} />
+                  BLACK
+                </button>
+              </div>
+              <div className="text-[9px] mt-1.5 opacity-45 italic">call it, win the fine</div>
+            </>
+          ) : (
+            <div className="mt-2">
+              <div className="text-[11px] font-bold" style={{ letterSpacing: "0.06em" }}>
+                YOU CALLED {call.toUpperCase()}
+              </div>
+              <div className="text-[10px] mt-1 opacity-55 italic">
+                watching the street…{passed > 0 ? ` ${passed} other${passed === 1 ? "" : "s"} went by` : ""}
+              </div>
+            </div>
+          )}
+
+          {wallet.bank > 0 && (
+            <div className="mt-2.5 pt-2 border-t border-[var(--ink-faint)] flex items-baseline justify-between">
+              <span className="text-[9px] opacity-55" style={{ letterSpacing: "0.22em" }}>
+                BANKROLL
+              </span>
+              <span className="text-[15px] font-bold tabular-nums" style={{ color: "#3c6e50" }}>
+                ${wallet.bank.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {wallet.unlocked && (
+            <div className="text-[9px] mt-1.5 opacity-50" style={{ letterSpacing: "0.14em", textAlign: "right" }}>
+              THE CORNER HAS TURNED UP ↘
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* The dog-eared corner: peel it back to find THE FLOOR */}
+      {hasGame && wallet.unlocked && (
+        <button
+          className={`pulse-fold${peeling ? " peeling" : ""}`}
+          onClick={peelToFloor}
+          aria-label="Peel the corner — THE FLOOR"
+        >
+          <span className="fold-under">
+            <span>THE FLOOR →</span>
+          </span>
+          <span className="fold-paper" />
+        </button>
+      )}
 
       {/* The sound control — once the intro is dismissed, a quiet corner toggle. */}
       {!showIntro && (

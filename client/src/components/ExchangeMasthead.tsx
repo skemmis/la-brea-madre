@@ -13,7 +13,7 @@ export default function ExchangeMasthead({ active }: { active: "floor" | "portfo
   const { data: tape = [] } = useActivity();
 
   const nav = [
-    { href: "/", label: "THE FLOOR", key: "floor" },
+    { href: "/floor", label: "THE FLOOR", key: "floor" },
     { href: "/portfolio", label: "PORTFOLIO", key: "portfolio" },
     { href: "/arena", label: "ARENA", key: "arena" },
     { href: "/pulse", label: "PULSE", key: "pulse" },

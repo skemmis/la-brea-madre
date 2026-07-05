@@ -89,3 +89,57 @@ body {
   font-size: 10px;
   opacity: 0.5;
 }
+
+/* The dog-eared corner: the sheet lifts at bottom-right to show the page
+   beneath — THE FLOOR. Two triangles: the dark under-page, and the curled
+   paper corner laid over it, breathing gently until it's peeled. */
+.pulse-fold {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  z-index: 15;
+  animation: fold-breathe 3.6s ease-in-out infinite;
+  transform-origin: bottom right;
+  transition: width 200ms ease, height 200ms ease;
+}
+.pulse-fold:hover { width: 122px; height: 122px; }
+.pulse-fold .fold-under {
+  /* the glimpsed page beneath: ink-dark, with its own tiny title */
+  position: absolute; inset: 0;
+  background: var(--ink);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.pulse-fold .fold-under span {
+  position: absolute;
+  right: 8px; bottom: 26px;
+  color: var(--paper);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  transform: rotate(-45deg);
+  transform-origin: bottom right;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.pulse-fold .fold-paper {
+  /* the lifted corner itself: paper underside, shadowed along the crease */
+  position: absolute; inset: 0;
+  background: linear-gradient(315deg, var(--paper-deep) 0%, var(--paper) 55%);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  box-shadow: 2px 2px 6px rgba(42, 54, 106, 0.35);
+  border-bottom: 1px solid var(--ink-faint);
+}
+@keyframes fold-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+.pulse-fold.peeling {
+  transition: width 450ms ease-in, height 450ms ease-in, opacity 450ms;
+  width: 300vw; height: 300vw;
+  opacity: 0.97;
+}

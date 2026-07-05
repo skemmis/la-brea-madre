@@ -12,7 +12,7 @@
  */
 import { pool, db } from "./db";
 import { hexCells, hexAmbient, citationDaily, users } from "@shared/schema";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   assessedPrice,
   repairCost,
@@ -248,6 +248,51 @@ export async function doAction(userId: number, action: Action): Promise<ActionRe
   const next = applyAction(state, config, id, action);
   await saveState(next);
   return { ok: true, crude: next.players[id].crude, workOrders: next.players[id].workOrders ?? 0 };
+}
+
+// The one-time grant a new player earns on the Pulse map (calling tickets
+// before the corner peels). Winnings above the cap are kept as bragging
+// rights only — a grinder shouldn't out-bankroll the founding stake.
+const PULSE_SEED_CAP = 2500;
+
+/**
+ * Claim Pulse winnings as the player's starting bankroll — once, ever.
+ * Returns the credited amount (0 if already claimed) and the new balance.
+ */
+export async function claimPulseSeed(
+  userId: number,
+  dollars: number
+): Promise<{ credited: number; crude: number; alreadyClaimed: boolean }> {
+  const amount = Math.min(PULSE_SEED_CAP, Math.max(0, Math.floor(dollars)));
+
+  // The users row is the idempotency gate: stamp pulse_seed_at atomically so a
+  // double-fire (two tabs, a retry) can't credit twice.
+  const stamped = await db
+    .update(users)
+    .set({ pulseSeedAt: new Date() })
+    .where(and(eq(users.id, userId), isNull(users.pulseSeedAt)))
+    .returning({ id: users.id });
+
+  let { state, config } = await getOrInitGame();
+  state = await ensurePlayer(state, config, userId);
+  const id = pid(userId);
+
+  if (stamped.length === 0 || amount === 0) {
+    return { credited: 0, crude: state.players[id].crude, alreadyClaimed: stamped.length === 0 };
+  }
+
+  const next: GameState = {
+    ...state,
+    players: {
+      ...state.players,
+      [id]: { ...state.players[id], crude: state.players[id].crude + amount },
+    },
+  };
+  await saveState(next);
+  // Keep the cached users.crude column in step with the canonical state.
+  await pool.query(`UPDATE users SET crude = crude + $1 WHERE id = $2`, [amount, userId]);
+
+  return { credited: amount, crude: next.players[id].crude, alreadyClaimed: false };
 }
 
 /** Whether a user can still take their daily action this tick. */

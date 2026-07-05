@@ -99,6 +99,21 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Claim Pulse winnings as the starting bankroll — once per account, capped.
+  app.post("/api/pulse/claim", requireAuth, async (req: Request, res: Response) => {
+    const user = req.user as any;
+    const { bank } = req.body;
+    if (typeof bank !== "number" || !Number.isFinite(bank)) {
+      return res.status(400).json({ error: "bank (number) required" });
+    }
+    try {
+      const { claimPulseSeed } = await import("./gameService");
+      res.json(await claimPulseSeed(user.id, bank));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // Citation hotspots for today
   app.get("/api/map/hotspots", async (req: Request, res: Response) => {
     const date = (req.query.date as string) || todayPT();
