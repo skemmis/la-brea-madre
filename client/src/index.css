@@ -94,6 +94,9 @@ body {
    beneath — THE FLOOR. Two triangles: the dark under-page, and the curled
    paper corner laid over it, breathing gently until it's peeled. */
 .pulse-fold {
+  /* The button's own box never animates — the breathing lives on the inner
+     layers — so the hit target stays put for fingers and for automation
+     (which refuses to click a moving element). */
   position: absolute;
   bottom: 0;
   right: 0;
@@ -104,11 +107,18 @@ body {
   background: transparent;
   cursor: pointer;
   z-index: 15;
-  animation: fold-breathe 3.6s ease-in-out infinite;
-  transform-origin: bottom right;
   transition: width 200ms ease, height 200ms ease;
 }
 .pulse-fold:hover { width: 122px; height: 122px; }
+.pulse-fold .fold-under,
+.pulse-fold .fold-paper {
+  animation: fold-breathe 3.6s ease-in-out infinite;
+  transform-origin: bottom right;
+}
+.pulse-fold:hover .fold-under,
+.pulse-fold:hover .fold-paper {
+  animation-play-state: paused; /* hold still when reached for */
+}
 .pulse-fold .fold-under {
   /* the glimpsed page beneath: ink-dark, with its own tiny title */
   position: absolute; inset: 0;
@@ -116,13 +126,14 @@ body {
   clip-path: polygon(100% 0, 100% 100%, 0 100%);
 }
 .pulse-fold .fold-under span {
+  /* centered on the revealed triangle (its centroid sits at 2/3, 2/3),
+     running along the crease */
   position: absolute;
-  right: 8px; bottom: 26px;
+  left: 66%; top: 66%;
+  transform: translate(-50%, -50%) rotate(-45deg);
   color: var(--paper);
   font-size: 9px;
   letter-spacing: 0.22em;
-  transform: rotate(-45deg);
-  transform-origin: bottom right;
   white-space: nowrap;
   opacity: 0.9;
 }
