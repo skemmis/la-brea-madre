@@ -70,7 +70,7 @@ function place(cx,cy_,w,h,avoidFree,needLand){const pad=0.02;
     if(needLand){const pts=[[x,y],[bb[0],bb[1]],[bb[2],bb[1]],[bb[0],bb[3]],[bb[2],bb[3]]]; if(!pts.every(p=>onLandInch(p[0],p[1]))) continue;}
     if(boxFree(bb)&&(!avoidFree||!hitsFree(bb))){placed.push(bb);return[x,y];}}
   return null;}
-const HOLE_D=11.75/25.4, HOLE_R=HOLE_D/2, HOLE_GAP=0.03; const holes=[]; // 11.75mm pixel hole, stacked below each title
+const HOLE_D=11.75/25.4, HOLE_R=HOLE_D/2, HOLE_GAP=0.03; const holes=[]; const labelData=[]; // 11.75mm pixel hole, stacked below each title
 function mkLabel(f,col,scale,weight,avoidFree){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
   const lines=f.properties.name.toUpperCase().split(/\s+/);
   const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.76, h=lines.length*lh;
@@ -78,6 +78,7 @@ function mkLabel(f,col,scale,weight,avoidFree){const c=f.geometry.coordinates;co
   let pos=place(PX(c),PY(c),uW,uH,avoidFree,true); if(!pos) pos=place(PX(c),PY(c),uW,uH,false,true); if(!pos) pos=place(PX(c),PY(c),uW,uH,false,false); if(!pos) return "";
   const top=pos[1]-uH/2, labelY=top+h/2, holeY=top+h+HOLE_GAP+HOLE_R;
   holes.push({x:pos[0],y:holeY,name:f.properties.name});
+  labelData.push({x:pos[0],y:labelY,size:s,ls:s*0.05,lh,lines});
   const ls=(s*0.05).toFixed(3); const first=(-(lines.length-1)/2*lh).toFixed(3);
   let t=`<text x="${pos[0].toFixed(3)}" y="${labelY.toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
     `font-family="Georgia,'Times New Roman',serif" font-weight="${weight}" text-anchor="middle" letter-spacing="${ls}" dominant-baseline="central">`;
@@ -119,3 +120,12 @@ svg+=`<rect x="0.19" y="0.19" width="${W-0.38}" height="${H-0.38}" fill="none" s
 svg+="</svg>\n";
 fs.writeFileSync("physical-pulse/pulse-map-tampa-style.svg",svg);
 console.log("labels placed:",placed.length-1,"of",nb.length+cy.length,"| multiline+freeway-dodge | bytes:",fs.statSync("physical-pulse/pulse-map-tampa-style.svg").size);
+// ── layout dump (inches) for build_cut_files.py, which writes the Glowforge face + ocean layers ──
+const inch=pls=>pls.map(pl=>pl.map(c=>[+PX(c).toFixed(4),+PY(c).toFixed(4)]));
+const landRings=[]; for(const f of land) for(const r of f.geometry.coordinates) landRings.push(r.map(c=>[+PX(c).toFixed(4),+PY(c).toFixed(4)]));
+fs.writeFileSync("physical-pulse/data/layout.json",JSON.stringify({W,H,holeR:HOLE_R,holes,labels:labelData,landRings,
+  layers:{free:inch(free),major:inch(major),minor:inch(minor),terrain:inch(terrain),bathy:inch(bathy),coast:inch(coast)},
+  compass:{x:1.05,y:H-1.55,r:0.5},
+  cartouche:[{text:"LOS ANGELES",x:1.65,y:H-0.8,size:0.2,ls:0.03},{text:"CALIFORNIA",x:1.65,y:H-0.58,size:0.095,ls:0.16}],
+  neat:[[0.13,0.13,W-0.26,H-0.26],[0.19,0.19,W-0.38,H-0.38]]}));
+console.log("layout dumped -> physical-pulse/data/layout.json");
