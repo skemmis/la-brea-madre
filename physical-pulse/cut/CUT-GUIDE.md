@@ -36,8 +36,9 @@ Each color comes in as its own step, so you can set power per step or switch any
 ## Rebuilding
 
 ```
+physical-pulse/fetch-osm-roads.sh              # road network from OpenFreeMap tiles (needs: pip install mapbox-vector-tile)
 node physical-pulse/generate-tampa-style.cjs   # layout (writes physical-pulse/data/layout.json)
 python3 physical-pulse/build_cut_files.py      # these two SVGs (needs: pip install fonttools)
 ```
 
-**Known gap in this pass:** the streets come from the app's own City-of-LA data, so the independent cities (Santa Monica, Beverly Hills, Culver City, Burbank, Glendale) show few streets. The full OpenStreetMap download failed today. When the Overpass servers cooperate, run `physical-pulse/fetch-osm-roads.sh` and rebuild to fill those areas in.
+Streets are OpenStreetMap data (via OpenFreeMap tiles, Nov 2026), covering every city in the frame, not just LA.

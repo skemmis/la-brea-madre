@@ -31,7 +31,7 @@ if(fs.existsSync(OSM)){
     const dst=(t==="motorway"||t==="trunk")?free:(t==="primary"||t==="secondary")?major:minor;
     for(const pl of polylines(w.c)) dst.push(pl);}
 }else{ // fallback: the app's own City-of-LA street data (sparse outside city limits)
-  console.log("NOTE: no OSM cache; using repo street data. Run physical-pulse/fetch-osm-roads.sh for full coverage.");
+  console.log("NOTE: no OSM cache; using repo street data. Run physical-pulse/fetch-osm-roads.sh (OpenFreeMap tiles) for full coverage.");
   for(const f of load("la-roads.geojson")) for(const pl of polylines(f.geometry.coordinates)) free.push(pl);
   for(const f of load("la-streets.geojson")){const t=f.properties.t||0; if(t<1)continue;
     for(const pl of polylines(f.geometry.coordinates)) (t>=2?major:minor).push(pl);}
