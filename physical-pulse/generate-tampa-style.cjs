@@ -24,11 +24,18 @@ const linesOf=(feats,filt)=>{const o=[];for(const f of feats){if(filt&&!filt(f))
   for(const ring of parts) for(const pl of polylines(ring)) o.push(pl);}return o;};
 function fillPath(feats){let d="";for(const f of feats){for(const ring of f.geometry.coordinates){
   d+="M"+ring.map(c=>PX(c).toFixed(3)+","+PY(c).toFixed(3)).join("L")+"Z";}}return d;}
-const osm=JSON.parse(fs.readFileSync("physical-pulse/data/osm-roads-box.json","utf8"));
 const free=[],major=[],minor=[];
-for(const w of osm){const t=w.h; if(t==="motorway_link"||t==="trunk_link")continue;
-  const dst=(t==="motorway"||t==="trunk")?free:(t==="primary"||t==="secondary")?major:minor;
-  for(const pl of polylines(w.c)) dst.push(pl);}
+const OSM="physical-pulse/data/osm-roads-box.json";
+if(fs.existsSync(OSM)){
+  for(const w of JSON.parse(fs.readFileSync(OSM,"utf8"))){const t=w.h; if(t==="motorway_link"||t==="trunk_link")continue;
+    const dst=(t==="motorway"||t==="trunk")?free:(t==="primary"||t==="secondary")?major:minor;
+    for(const pl of polylines(w.c)) dst.push(pl);}
+}else{ // fallback: the app's own City-of-LA street data (sparse outside city limits)
+  console.log("NOTE: no OSM cache; using repo street data. Run physical-pulse/fetch-osm-roads.sh for full coverage.");
+  for(const f of load("la-roads.geojson")) for(const pl of polylines(f.geometry.coordinates)) free.push(pl);
+  for(const f of load("la-streets.geojson")){const t=f.properties.t||0; if(t<1)continue;
+    for(const pl of polylines(f.geometry.coordinates)) (t>=2?major:minor).push(pl);}
+}
 const land=load("socal-land.geojson");
 const rings=[]; for(const f of land) for(const r of f.geometry.coordinates) rings.push(r);
 function inLand(p){let c=false;for(const r of rings){for(let i=0,j=r.length-1;i<r.length;j=i++){
@@ -39,11 +46,16 @@ function offset(coords,sign,d){const o=[];for(let i=0;i<coords.length;i++){
   let dx=b[0]-a[0],dy=b[1]-a[1];const L=Math.hypot(dx,dy)||1;const nx=-dy/L,ny=dx/L;
   o.push([coords[i][0]+sign*nx*d,coords[i][1]+sign*ny*d]);}return o;}
 const coastFeats=load("socal-coastline.geojson"); let bathy=[];
-for(const f of coastFeats){const co=f.geometry.coordinates;const m=Math.floor(co.length/2);
+// drop points where an offset line doubles back on itself (the little spikes at concave corners)
+const despike=c=>{for(let pass=0;pass<6;pass++){const o=[c[0]];for(let i=1;i<c.length-1;i++){const a=o[o.length-1],b=c[i],n=c[i+1];
+  if((b[0]-a[0])*(n[0]-b[0])+(b[1]-a[1])*(n[1]-b[1])>0)o.push(b);}o.push(c[c.length-1]);if(o.length===c.length)break;c=o;}return c;};
+// smooth the coastline first so the offset depth lines don't spike at sharp corners
+const smooth=(c,n=4)=>{for(let k=0;k<n;k++)c=c.map((p,i)=>i===0||i===c.length-1?p:[(c[i-1][0]+2*p[0]+c[i+1][0])/4,(c[i-1][1]+2*p[1]+c[i+1][1])/4]);return c;};
+for(const f of coastFeats){const co=smooth(f.geometry.coordinates);const m=Math.floor(co.length/2);
   let sign=1;const t=offset([co[Math.max(0,m-1)],co[m],co[Math.min(co.length-1,m+1)]],1,0.01)[1];
   if(inLand(t))sign=-1;
   for(const d of [0.004,0.009,0.015,0.022,0.030,0.039,0.049,0.060,0.072,0.085,0.099,0.114])
-    for(const pl of polylines(offset(co,sign,d))) bathy.push(pl);}
+    for(const pl of polylines(despike(offset(co,sign,d)))) bathy.push(pl);}
 const coast=linesOf(coastFeats);
 const terrain=linesOf(load("socal-contours.geojson"));
 const nb=load("la-neighborhood-labels.geojson").filter(f=>inBox(f.geometry.coordinates));
@@ -61,24 +73,30 @@ function hitsFree(bb){for(const s of freeSegs){if(segInRect(s[0],s[1],s[2],s[3],
 const placed=[]; const M=0.27;
 function boxFree(bb){for(const p of placed){if(!(bb[2]<p[0]||bb[0]>p[2]||bb[3]<p[1]||bb[1]>p[3]))return false;}return true;}
 function onLandInch(x,y){const lng=LNG_MIN+x/W*lngSpan, lat=LAT_MAX-y/H*latSpan; return inLand([lng,lat]);}
-function place(cx,cy_,w,h,avoidFree,needLand){const pad=0.02;
-  const cands=[[0,0]]; for(const rr of [1,1.5,2,2.6,3.2,4,4.8]) for(let k=0;k<8;k++){const a=k*Math.PI/4+(rr%2?0:0.39); cands.push([Math.cos(a)*rr,Math.sin(a)*rr]);}
-  const sx=Math.max(0.11,w*0.5+0.04), sy=Math.max(0.1,h*0.6+0.03);
-  for(const[ox,oy]of cands){let x=cx+ox*sx,y=cy_+oy*sy;
-    x=Math.min(Math.max(x,M+w/2),W-M-w/2); y=Math.min(Math.max(y,M+h/2),H-M-h/2);
-    const bb=[x-w/2-pad,y-h/2-pad,x+w/2+pad,y+h/2+pad];
-    if(needLand){const pts=[[x,y],[bb[0],bb[1]],[bb[2],bb[1]],[bb[0],bb[3]],[bb[2],bb[3]]]; if(!pts.every(p=>onLandInch(p[0],p[1]))) continue;}
-    if(boxFree(bb)&&(!avoidFree||!hitsFree(bb))){placed.push(bb);return[x,y];}}
+const HOLE_D=11.75/25.4, HOLE_R=HOLE_D/2, HOLE_GAP=0.03; const holes=[]; const labelData=[]; // 11.75mm pixel hole
+// Hole-first placement: the hole IS the neighborhood's location on an LED map, so search
+// outward from the true point for the nearest hole spot, with the title directly above
+// (or, if that doesn't fit, directly below) the hole.
+const HOLE_CANDS=[[0,0]]; for(let r=0.08;r<=1.6;r+=0.08){const n=Math.max(8,Math.round(2*Math.PI*r/0.1));
+  for(let k=0;k<n;k++){const a=2*Math.PI*k/n; HOLE_CANDS.push([Math.cos(a)*r,Math.sin(a)*r]);}}
+function placeHole(hx0,hy0,w,h,avoidFree,needLand,maxR=9){const pad=0.02, uW=Math.max(w,HOLE_D), uH=h+HOLE_GAP+HOLE_D;
+  for(const[ox,oy]of HOLE_CANDS){if(Math.hypot(ox,oy)>maxR)break; const hx=hx0+ox, hy=hy0+oy;
+    for(const above of [true,false]){
+      const top=above? hy-HOLE_R-HOLE_GAP-h : hy-HOLE_R;
+      const bb=[hx-uW/2-pad,top-pad,hx+uW/2+pad,top+uH+pad];
+      if(bb[0]<M||bb[1]<M||bb[2]>W-M||bb[3]>H-M) continue;
+      if(!boxFree(bb)) continue;
+      if(needLand){const pts=[[hx,hy],[bb[0],bb[1]],[bb[2],bb[1]],[bb[0],bb[3]],[bb[2],bb[3]]]; if(!pts.every(p=>onLandInch(p[0],p[1]))) continue;}
+      if(avoidFree&&hitsFree(bb)) continue;
+      placed.push(bb); return {hx,hy,labelY: above? top+h/2 : hy+HOLE_R+HOLE_GAP+h/2};}}
   return null;}
-const HOLE_D=11.75/25.4, HOLE_R=HOLE_D/2, HOLE_GAP=0.03; const holes=[]; const labelData=[]; // 11.75mm pixel hole, stacked below each title
 function mkLabel(f,col,scale,weight,avoidFree){const c=f.geometry.coordinates;const s=fsize(f.properties.area||1e-4)*scale;
   const lines=f.properties.name.toUpperCase().split(/\s+/);
-  const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.76, h=lines.length*lh;
-  const uW=Math.max(w,HOLE_D), uH=h+HOLE_GAP+HOLE_D;          // title + hole stack
-  let pos=place(PX(c),PY(c),uW,uH,avoidFree,true); if(!pos) pos=place(PX(c),PY(c),uW,uH,false,true); if(!pos) pos=place(PX(c),PY(c),uW,uH,false,false); if(!pos) return "";
-  const top=pos[1]-uH/2, labelY=top+h/2, holeY=top+h+HOLE_GAP+HOLE_R;
-  holes.push({x:pos[0],y:holeY,name:f.properties.name});
-  labelData.push({x:pos[0],y:labelY,size:s,ls:s*0.05,lh,lines});
+  const lh=s*1.02, w=Math.max(...lines.map(l=>l.length))*s*0.85, h=lines.length*lh; // 0.85 ≈ measured Liberation Serif Bold width
+  let p=placeHole(PX(c),PY(c),w,h,avoidFree,true,0.5); if(!p) p=placeHole(PX(c),PY(c),w,h,false,true); if(!p) p=placeHole(PX(c),PY(c),w,h,false,false); if(!p) return "";
+  const pos=[p.hx], labelY=p.labelY;
+  holes.push({x:p.hx,y:p.hy,name:f.properties.name});
+  labelData.push({x:p.hx,y:labelY,size:s,ls:s*0.05,lh,lines});
   const ls=(s*0.05).toFixed(3); const first=(-(lines.length-1)/2*lh).toFixed(3);
   let t=`<text x="${pos[0].toFixed(3)}" y="${labelY.toFixed(3)}" font-size="${s.toFixed(3)}" fill="${col}" `+
     `font-family="Georgia,'Times New Roman',serif" font-weight="${weight}" text-anchor="middle" letter-spacing="${ls}" dominant-baseline="central">`;
@@ -105,7 +123,11 @@ let labelSvg="";
 // surrounding-city labels (Glendale, Beverly Hills, etc.) removed — City of LA only
 // Curated 45: a mix of highly-ticketed hotspots and well-known names, spread across regions
 const SELECTED=new Set(["DOWNTOWN","KOREATOWN","WESTLAKE","MID-WILSHIRE","HOLLYWOOD","EAST HOLLYWOOD","BEVERLY GROVE","FAIRFAX","HANCOCK PARK","MID-CITY","BOYLE HEIGHTS","LINCOLN HEIGHTS","EL SERENO","CHINATOWN","HOLLYWOOD HILLS","LOS FELIZ","SILVER LAKE","ECHO PARK","ATWATER VILLAGE","HIGHLAND PARK","EAGLE ROCK","VENICE","WESTWOOD","SAWTELLE","BRENTWOOD","WEST LOS ANGELES","MAR VISTA","PICO-ROBERTSON","WESTCHESTER","NORTH HOLLYWOOD","VAN NUYS","SHERMAN OAKS","STUDIO CITY","ENCINO","CANOGA PARK","PANORAMA CITY","RESEDA","FLORENCE","EXPOSITION PARK","SOUTH PARK","HISTORIC SOUTH-CENTRAL","WATTS","BALDWIN HILLS/CRENSHAW","LEIMERT PARK","PICO-UNION"]);
-const TOP45=nb.filter(f=>SELECTED.has(f.properties.name.toUpperCase())).sort((a,b)=>b.properties.area-a.properties.area);
+const SEL45=nb.filter(f=>SELECTED.has(f.properties.name.toUpperCase()));
+// place the most crowded neighborhoods first so they claim the spots nearest home
+const crowd=f=>{const [x,y]=[PX(f.geometry.coordinates),PY(f.geometry.coordinates)];
+  return SEL45.filter(g=>g!==f&&Math.hypot(PX(g.geometry.coordinates)-x,PY(g.geometry.coordinates)-y)<1.0).length;};
+const TOP45=SEL45.map(f=>({f,k:crowd(f)})).sort((a,b)=>b.k-a.k||b.f.properties.area-a.f.properties.area).map(o=>o.f);
 let nplaced=0,missed=[];for(const f of TOP45){const r=mkLabel(f,NBC,1.0,"bold",true);if(r)nplaced++;else missed.push(f.properties.name);labelSvg+=r;}
 console.log("neighborhood titles placed:",nplaced,"of 45; missed:",missed.join("|")||"none");
 fs.writeFileSync("physical-pulse/led-neighborhoods.json",JSON.stringify(holes.map((hh,i)=>{const f=TOP45.find(t=>t.properties.name===hh.name);return{idx:i,name:hh.name,lng:f.geometry.coordinates[0],lat:f.geometry.coordinates[1],holeX_in:+hh.x.toFixed(3),holeY_in:+hh.y.toFixed(3)};}),null,1));

@@ -103,6 +103,31 @@ def clip_to_rect(poly, x0, y0, x1, y1):
 def area(p):
     return 0.5 * sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(p, p[1:] + p[:1]))
 
+def circle_union(centers, r, step_deg=2.0):
+    """Outline of the union of equal circles: each circle is split at its exact
+    intersection points with its neighbours and only the outer arcs are kept, so
+    overlapping clearance holes become one clean cut with no slivers or crossings."""
+    arcs, merged = [], 0
+    for i, (cx, cy) in enumerate(centers):
+        nbrs = [c for j, c in enumerate(centers) if j != i and math.dist(c, (cx, cy)) < 2 * r]
+        if not nbrs:
+            arcs.append([(cx + r * math.cos(t), cy + r * math.sin(t)) for t in
+                         [k * 2 * math.pi / 180 for k in range(181)]]); continue
+        merged += 1
+        cuts = []
+        for ox, oy in nbrs:
+            d, th = math.dist((ox, oy), (cx, cy)), math.atan2(oy - cy, ox - cx)
+            al = math.acos(min(1, d / (2 * r)))
+            cuts += [(th - al) % (2 * math.pi), (th + al) % (2 * math.pi)]
+        cuts.sort()
+        for a, b in zip(cuts, cuts[1:] + [cuts[0] + 2 * math.pi]):
+            mid = (a + b) / 2
+            mp = (cx + r * math.cos(mid), cy + r * math.sin(mid))
+            if any(math.dist(mp, o) < r - 1e-9 for o in nbrs): continue
+            n = max(2, int(math.degrees(b - a) / step_deg) + 1)
+            arcs.append([(cx + r * math.cos(a + (b - a) * k / n), cy + r * math.sin(a + (b - a) * k / n)) for k in range(n + 1)])
+    return arcs, merged
+
 def seg_dist(p, a, b):
     (px, py), (ax, ay), (bx, by) = p, a, b
     dx, dy = bx - ax, by - ay
@@ -133,7 +158,7 @@ for lab in L["labels"]:
         d, w, cap = text_path(line, lab["x"], ly, lab["size"], lab["ls"])
         label_d.append(d)
         widest = max(widest, w)
-        worst_ratio = max(worst_ratio, w / (len(line) * lab["size"] * 0.76))
+        worst_ratio = max(worst_ratio, w / (len(line) * lab["size"] * 0.85))
     hh = n * lab["lh"]
     boxes.append((lab["x"] - widest / 2, lab["y"] - hh / 2, lab["x"] + widest / 2, lab["y"] + hh / 2))
 
@@ -204,14 +229,16 @@ def ocean_body(c, preview=False):
     b = ""
     if preview: b += f'<rect width="{W}" height="{H}" fill="#4a5753"/>\n'
     b += stroke(c["bathy"], poly_d(lay["bathy"]), 0.006 if preview else SW)
-    b += stroke(c["guide"], poly_d(lay["coast"]), 0.012 if preview else SW)
+    b += stroke(c["guide"], poly_d([list(e) for e in coast_edges]), 0.012 if preview else SW)  # = face cut edge
     b += stroke(c["neat"], neat_d(), 0.012 if preview else SW)
     b += f'<circle cx="{f2(cp["x"])}" cy="{f2(cp["y"])}" r="{f2(cp["r"] * 0.18)}" fill="none" stroke="{c["neat"]}" stroke-width="{0.018 if preview else SW}"/>\n'
     b += f'<path d="{" ".join(ocean_engrave)}" fill="{"#d3dbd6" if preview else c["engrave"]}"/>\n'
     if not preview:
         b += stroke(c["cut"], f"M0,0H{f2(W)}V{f2(H)}H0Z")
-        b += circles(c["cut"], holes, OCEAN_HOLE_MM / 25.4 / 2)
+        b += stroke(c["cut"], poly_d(clear_arcs))
     return b
+
+clear_arcs, merged_holes = circle_union([(h["x"], h["y"]) for h in holes], OCEAN_HOLE_MM / 25.4 / 2)
 
 os.makedirs(OUT, exist_ok=True)
 ops = {k: v[0] for k, v in OPS.items()}
@@ -225,8 +252,8 @@ print(f"face:  {len(land)} land piece(s), cut {plen([r + r[:1] for r in land]) +
       f"| {len(holes)} holes @ {R * 2 * 25.4:.2f}mm | {len(L['labels'])} labels engraved")
 for k in ("free", "major", "minor", "terrain"):
     print(f"   score {k:8s} {len(lay[k]):6d} paths  {plen(lay[k]):8.0f} in")
-print(f"ocean: cut {2 * (W + H) + len(holes) * math.pi * OCEAN_HOLE_MM / 25.4:.0f} in | {len(holes)} clearance holes @ {OCEAN_HOLE_MM}mm "
-      f"| bathy {plen(lay['bathy']):.0f} in, coast guide {plen(lay['coast']):.0f} in")
+print(f"ocean: cut {2 * (W + H) + plen(clear_arcs):.0f} in | {len(holes)} clearance holes @ {OCEAN_HOLE_MM}mm "
+      f"({merged_holes} merged with a neighbour) | bathy {plen(lay['bathy']):.0f} in, coast guide {plen([list(e) for e in coast_edges]):.0f} in")
 print(f"checks: label/label overlaps {overlaps} | label-over-hole {hole_hits} | holes too close {hole_pairs} "
       f"| real/estimated label width {worst_ratio:.2f}x")
 print("thin wood near holes (<2mm): " + (", ".join(f"{n} {d}mm" for n, d in slivers) or "none"))
